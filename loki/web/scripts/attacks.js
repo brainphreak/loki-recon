@@ -209,7 +209,12 @@ var AttacksTab = {
             drop.innerHTML = this.netkbData.actions.map(a => {
                 var name = this.actionDisplayNames[a] || a;
                 return '<option value="' + a + '">' + name + '</option>';
-            }).join('') + '<option value="NmapVulnScanner">Vuln Scan</option>' +
+            }).join('') +
+                '<option value="NmapVulnScanner">Vuln Scan: Nmap</option>' +
+                '<option value="NucleiScanner">Vuln Scan: Nuclei</option>' +
+                '<option value="SearchSploitEnricher">Vuln Scan: SearchSploit</option>' +
+                '<option value="TestSSLScanner">Vuln Scan: TestSSL</option>' +
+                '<option value="RunAllVulnScanners">-- Run All Vuln Scanners --</option>' +
                 '<option value="RunAllAttacks">-- Run All Attacks --</option>';
         }
         if (prevAction) {

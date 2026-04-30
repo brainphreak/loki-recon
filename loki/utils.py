@@ -26,6 +26,11 @@ class WebUtils:
         self.logger = logger
         self.actions = None  # List that contains all actions
         self.standalone_actions = None  # List that contains all standalone actions
+        self.network_scanner = None
+        self.nmap_vuln_scanner = None
+        self.nuclei_scanner = None
+        self.searchsploit_scanner = None
+        self.testssl_scanner = None
 
     def load_actions(self):
         """Load all actions from the actions file (only used by orchestrator)"""
@@ -53,6 +58,26 @@ class WebUtils:
         """Load only the nmap vuln scanner if not already loaded"""
         if not hasattr(self, 'nmap_vuln_scanner') or self.nmap_vuln_scanner is None:
             self._load_nmap_module()
+
+    def ensure_vuln_scanner(self, action_class):
+        """Load a specific vulnerability scanner module on demand."""
+        mapping = {
+            'NucleiScanner': ('nuclei_scanner', 'nuclei_scanner'),
+            'SearchSploitEnricher': ('searchsploit_enricher', 'searchsploit_scanner'),
+            'TestSSLScanner': ('testssl_scanner', 'testssl_scanner'),
+        }
+        if action_class not in mapping:
+            return
+        module_name, attr = mapping[action_class]
+        if getattr(self, attr, None) is not None:
+            return
+        try:
+            module = importlib.import_module(f'actions.{module_name}')
+            cls = getattr(module, action_class)
+            setattr(self, attr, cls(self.shared_data))
+        except (ImportError, AttributeError) as e:
+            self.logger.error(f"Failed to load {action_class}: {e}")
+            setattr(self, attr, None)
 
     def ensure_single_action(self, action_class):
         """Load only a specific action module if not already loaded"""
@@ -334,7 +359,9 @@ class WebUtils:
             self.shared_data.orchestrator_should_exit = False
 
             # Track running attack so UI can recover state after browser refresh
-            is_async = action_class in ('NetworkScanner', 'PortScanner', 'NmapVulnScanner', 'RunAllAttacks')
+            is_async = action_class in ('NetworkScanner', 'PortScanner', 'NmapVulnScanner',
+                                        'NucleiScanner', 'SearchSploitEnricher', 'TestSSLScanner',
+                                        'RunAllVulnScanners', 'RunAllAttacks')
             self.shared_data.manual_attack_running = True
             self.shared_data.manual_attack_name = action_class
 
@@ -445,6 +472,123 @@ class WebUtils:
                 handler.send_header("Content-type", "application/json")
                 handler.end_headers()
                 handler.wfile.write(json.dumps({"status": "success", "message": f"Vulnerability scan started{' on ' + ip if ip else ''}"}).encode('utf-8'))
+                return
+
+            # Handle individual vulnerability scanners (Nuclei, SearchSploit, TestSSL)
+            if action_class in ('NucleiScanner', 'SearchSploitEnricher', 'TestSSLScanner'):
+                self.ensure_vuln_scanner(action_class)
+                scanner = getattr(self, {
+                    'NucleiScanner': 'nuclei_scanner',
+                    'SearchSploitEnricher': 'searchsploit_scanner',
+                    'TestSSLScanner': 'testssl_scanner',
+                }[action_class])
+                scan_target_ip = ip
+                self.logger.info(f"Executing {action_class} on {scan_target_ip if scan_target_ip else 'all hosts'}...")
+                import threading
+
+                def run_single_vuln_scan():
+                    try:
+                        current_data = self.shared_data.read_data()
+                        if scan_target_ip:
+                            row = next((r for r in current_data if r["IPs"] == scan_target_ip), None)
+                            if row:
+                                ports = row.get("Ports", "").split(';')
+                                self.shared_data.attacksnbr += 1
+                                result = scanner.execute(scan_target_ip, ports, row, action_class)
+                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                row[action_class] = f'{result}_{timestamp}'
+                                self.shared_data.write_data(current_data)
+                            else:
+                                self.logger.warning(f"No data found for IP: {scan_target_ip}")
+                        else:
+                            for row in current_data:
+                                if row.get("Alive") == "1" and row.get("Ports"):
+                                    self.shared_data.attacksnbr += 1
+                                    ports = row["Ports"].split(';')
+                                    result = scanner.execute(row["IPs"], ports, row, action_class)
+                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                    row[action_class] = f'{result}_{timestamp}'
+                            self.shared_data.write_data(current_data)
+                    except Exception as e:
+                        self.logger.error(f"Error in {action_class} thread: {e}")
+                    finally:
+                        self.shared_data.lokiorch_status = "IDLE"
+                        self.shared_data.lokistatustext2 = ""
+                        self.shared_data.manual_attack_running = False
+                        self.shared_data.manual_attack_name = None
+                        self.shared_data.orchestrator_should_exit = False
+
+                t = threading.Thread(target=run_single_vuln_scan)
+                t.start()
+                handler.send_response(200)
+                handler.send_header("Content-type", "application/json")
+                handler.end_headers()
+                handler.wfile.write(json.dumps({"status": "success", "message": f"{action_class} started{' on ' + scan_target_ip if scan_target_ip else ''}"}).encode('utf-8'))
+                return
+
+            # Handle RunAllVulnScanners - run nmap, nuclei, searchsploit, testssl in sequence
+            if action_class == 'RunAllVulnScanners':
+                self.ensure_nmap_scanner()
+                for sc in ('NucleiScanner', 'SearchSploitEnricher', 'TestSSLScanner'):
+                    self.ensure_vuln_scanner(sc)
+                all_ip = ip
+                self.logger.info(f"Executing all vulnerability scanners on {all_ip if all_ip else 'all hosts'}...")
+                import threading
+
+                def run_all_vuln_scans():
+                    try:
+                        current_data = self.shared_data.read_data()
+                        targets = []
+                        if all_ip:
+                            row = next((r for r in current_data if r["IPs"] == all_ip), None)
+                            if row:
+                                targets = [row]
+                            else:
+                                self.logger.warning(f"No data found for IP: {all_ip}")
+                        else:
+                            targets = [r for r in current_data if r.get("Alive") == "1" and r.get("Ports")]
+
+                        scanners = [
+                            ('NmapVulnScanner', self.nmap_vuln_scanner, True),  # signature: execute(ip, row, key)
+                            ('NucleiScanner', self.nuclei_scanner, False),
+                            ('SearchSploitEnricher', self.searchsploit_scanner, False),
+                            ('TestSSLScanner', self.testssl_scanner, False),
+                        ]
+
+                        for row in targets:
+                            target_ip = row["IPs"]
+                            ports_list = row.get("Ports", "").split(';')
+                            for sc_name, sc_inst, is_nmap in scanners:
+                                if sc_inst is None:
+                                    continue
+                                self.shared_data.lokiorch_status = sc_name
+                                self.shared_data.lokistatustext2 = target_ip
+                                self.shared_data.attacksnbr += 1
+                                try:
+                                    if is_nmap:
+                                        result = sc_inst.execute(target_ip, row, sc_name)
+                                    else:
+                                        result = sc_inst.execute(target_ip, ports_list, row, sc_name)
+                                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                    row[sc_name] = f'{result}_{timestamp}'
+                                except Exception as ex:
+                                    self.logger.error(f"{sc_name} failed for {target_ip}: {ex}")
+                            self.shared_data.write_data(current_data)
+                    except Exception as e:
+                        self.logger.error(f"Error in RunAllVulnScanners thread: {e}")
+                    finally:
+                        self.shared_data.lokiorch_status = "IDLE"
+                        self.shared_data.lokistatustext2 = ""
+                        self.shared_data.manual_attack_running = False
+                        self.shared_data.manual_attack_name = None
+                        self.shared_data.orchestrator_should_exit = False
+
+                t = threading.Thread(target=run_all_vuln_scans)
+                t.start()
+                handler.send_response(200)
+                handler.send_header("Content-type", "application/json")
+                handler.end_headers()
+                handler.wfile.write(json.dumps({"status": "success", "message": f"All vulnerability scanners started{' on ' + all_ip if all_ip else ''}"}).encode('utf-8'))
                 return
 
             # Handle RunAllAttacks - run all applicable attacks for a host based on open ports

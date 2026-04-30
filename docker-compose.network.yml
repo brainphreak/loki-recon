@@ -1,0 +1,35 @@
+# Loki-Pi network scanning environment.
+#
+# Uses regular Docker networking with port mapping but targets
+# your actual network (10.0.0.X) via BJORN_IP configuration.
+# Works reliably on Docker Desktop for macOS.
+#
+# Usage:
+#   docker compose -f docker-compose.network.yml up --build
+#   # Access: http://localhost:8000
+
+services:
+  loki:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    platform: linux/arm64
+    container_name: loki-pi-network
+    hostname: loki-network
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./loki:/app/loki
+      - ./loki.py:/app/loki.py
+      - ./requirements.txt:/app/requirements.txt
+      - loki-network-data:/data
+    environment:
+      LOKI_BIND: "0.0.0.0"
+      LOKI_PORT: "8000"
+      LOKI_DATA_DIR: "/data"
+      LOKI_LOG_LEVEL: "INFO"
+      BJORN_IP: "10.0.0.4"  # Your Mac's network IP - targets 10.0.0.0/24
+    restart: unless-stopped
+
+volumes:
+  loki-network-data:

@@ -61,31 +61,33 @@ class Orchestrator:
             self.attack_order = 'spread'
         logger.info(f"Attack order strategy: {self.attack_order}")
 
-        # Auto-detect target network based on container's IP
+        # Determine target network - prioritize environment variable for testing
         self.target_network = None
-        detected_ip = self._detect_container_ip()
-        if detected_ip:
+        env_ip = os.environ.get('BJORN_IP')
+
+        if env_ip:
+            # Use environment variable if specified (prioritized for testing)
             scan_prefix = getattr(self.shared_data, 'scan_network_prefix', 24) or 24
             try:
-                self.target_network = ipaddress.IPv4Network(f"{detected_ip}/{scan_prefix}", strict=False)
-                logger.info(f"Auto-detected container IP: {detected_ip}")
+                self.target_network = ipaddress.IPv4Network(f"{env_ip}/{scan_prefix}", strict=False)
+                logger.info(f"Using environment BJORN_IP: {env_ip} (prioritized over auto-detection)")
                 logger.info(f"Orchestrator target network: {self.target_network}")
-                # Archive netkb if network changed
                 self._archive_netkb_if_network_changed()
             except Exception as e:
-                logger.error(f"Error parsing target network: {e}")
-        else:
-            # Fallback to environment variable if auto-detection fails
-            env_ip = os.environ.get('BJORN_IP')
-            if env_ip:
+                logger.error(f"Error parsing target network from BJORN_IP: {e}")
+
+        if not self.target_network:
+            # Fallback to auto-detection if no environment variable or parsing failed
+            detected_ip = self._detect_container_ip()
+            if detected_ip:
                 scan_prefix = getattr(self.shared_data, 'scan_network_prefix', 24) or 24
                 try:
-                    self.target_network = ipaddress.IPv4Network(f"{env_ip}/{scan_prefix}", strict=False)
-                    logger.info(f"Using environment BJORN_IP: {env_ip}")
+                    self.target_network = ipaddress.IPv4Network(f"{detected_ip}/{scan_prefix}", strict=False)
+                    logger.info(f"Auto-detected container IP: {detected_ip}")
                     logger.info(f"Orchestrator target network: {self.target_network}")
                     self._archive_netkb_if_network_changed()
                 except Exception as e:
-                    logger.error(f"Error parsing target network: {e}")
+                    logger.error(f"Error parsing auto-detected target network: {e}")
             else:
                 logger.warning("No target network specified and auto-detection failed")
 

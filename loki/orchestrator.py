@@ -61,18 +61,33 @@ class Orchestrator:
             self.attack_order = 'spread'
         logger.info(f"Attack order strategy: {self.attack_order}")
 
-        # Get target network from environment (set by payload.sh)
+        # Auto-detect target network based on container's IP
         self.target_network = None
-        env_ip = os.environ.get('BJORN_IP')
-        if env_ip:
+        detected_ip = self._detect_container_ip()
+        if detected_ip:
             scan_prefix = getattr(self.shared_data, 'scan_network_prefix', 24) or 24
             try:
-                self.target_network = ipaddress.IPv4Network(f"{env_ip}/{scan_prefix}", strict=False)
+                self.target_network = ipaddress.IPv4Network(f"{detected_ip}/{scan_prefix}", strict=False)
+                logger.info(f"Auto-detected container IP: {detected_ip}")
                 logger.info(f"Orchestrator target network: {self.target_network}")
                 # Archive netkb if network changed
                 self._archive_netkb_if_network_changed()
             except Exception as e:
                 logger.error(f"Error parsing target network: {e}")
+        else:
+            # Fallback to environment variable if auto-detection fails
+            env_ip = os.environ.get('BJORN_IP')
+            if env_ip:
+                scan_prefix = getattr(self.shared_data, 'scan_network_prefix', 24) or 24
+                try:
+                    self.target_network = ipaddress.IPv4Network(f"{env_ip}/{scan_prefix}", strict=False)
+                    logger.info(f"Using environment BJORN_IP: {env_ip}")
+                    logger.info(f"Orchestrator target network: {self.target_network}")
+                    self._archive_netkb_if_network_changed()
+                except Exception as e:
+                    logger.error(f"Error parsing target network: {e}")
+            else:
+                logger.warning("No target network specified and auto-detection failed")
 
     def _archive_netkb_if_network_changed(self):
         """Archive netkb.csv on every Bjorn start for a fresh scan."""
@@ -125,6 +140,52 @@ class Orchestrator:
                 f.write(current_network)
         except Exception as e:
             logger.error(f"Error writing network marker: {e}")
+
+    def _detect_container_ip(self):
+        """Auto-detect the container's primary IP address."""
+        import socket
+        import subprocess
+
+        try:
+            # Method 1: Try to get IP by connecting to a remote address (doesn't actually connect)
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("8.8.8.8", 80))  # Google DNS
+                detected_ip = s.getsockname()[0]
+                if detected_ip and detected_ip != "127.0.0.1":
+                    return detected_ip
+        except Exception:
+            pass
+
+        try:
+            # Method 2: Use hostname -I (get all IPs and pick first non-loopback)
+            result = subprocess.run(['hostname', '-I'], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                ips = result.stdout.strip().split()
+                for ip_str in ips:
+                    try:
+                        ip = ipaddress.IPv4Address(ip_str)
+                        if not ip.is_loopback and not ip.is_link_local:
+                            return str(ip)
+                    except ValueError:
+                        continue
+        except Exception:
+            pass
+
+        try:
+            # Method 3: Parse ip route to find primary interface
+            result = subprocess.run(['ip', 'route', 'get', '8.8.8.8'], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                for line in result.stdout.split('\n'):
+                    if 'src' in line:
+                        parts = line.split()
+                        for i, part in enumerate(parts):
+                            if part == 'src' and i + 1 < len(parts):
+                                return parts[i + 1]
+        except Exception:
+            pass
+
+        logger.warning("Could not auto-detect container IP address")
+        return None
 
     def is_ip_in_target_network(self, ip):
         """Check if an IP is within the target network range."""

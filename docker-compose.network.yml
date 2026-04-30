@@ -16,6 +16,9 @@ services:
     platform: linux/arm64
     container_name: loki-pi-network
     hostname: loki-network
+    networks:
+      bjorn-testnet:
+        ipv4_address: 172.16.52.10
     ports:
       - "8000:8000"
     volumes:
@@ -28,8 +31,13 @@ services:
       LOKI_PORT: "8000"
       LOKI_DATA_DIR: "/data"
       LOKI_LOG_LEVEL: "INFO"
-      BJORN_IP: "10.0.0.4"  # Your Mac's network IP - targets 10.0.0.0/24
+      # BJORN_IP not set - orchestrator will auto-detect container's network
     restart: unless-stopped
+
+networks:
+  bjorn-testnet:
+    external: true
+    name: test_targets_bjorn-testnet
 
 volumes:
   loki-network-data:

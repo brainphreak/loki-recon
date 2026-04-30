@@ -315,6 +315,9 @@ class SharedData:
             "nuclei_severity": "medium,high,critical",
             "nuclei_rate_limit": 50,
             "nuclei_templates_dir": "",
+            "enable_searchsploit": False,
+            "enable_testssl": False,
+            "testssl_severity": "HIGH",
 
             "__title_brute_force__": "Brute Force Dictionary",
             "dictionary_mode": "default",

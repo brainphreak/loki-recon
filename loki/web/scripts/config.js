@@ -128,6 +128,12 @@ const ConfigTab = {
             { value: 'default', label: 'Default (11 users × 20 passwords ≈ 220 combos — fast)' },
             { value: 'aggressive', label: 'Aggressive (102 users × 106 passwords ≈ 10,800 combos)' },
             { value: 'custom', label: 'Custom (specify files below)' }
+        ],
+        'testssl_severity': [
+            { value: 'LOW',      label: 'LOW (verbose — every weak cipher shows)' },
+            { value: 'MEDIUM',   label: 'MEDIUM' },
+            { value: 'HIGH',     label: 'HIGH (recommended default)' },
+            { value: 'CRITICAL', label: 'CRITICAL only' }
         ]
     },
 
@@ -140,6 +146,9 @@ const ConfigTab = {
         'nuclei_severity': 'Nuclei: severity filter (info,low,medium,high,critical)',
         'nuclei_rate_limit': 'Nuclei: max requests per second',
         'nuclei_templates_dir': 'Nuclei: templates directory (blank = use defaults)',
+        'enable_searchsploit': 'Enable searchsploit (annotate CVEs with Exploit-DB matches)',
+        'enable_testssl': 'Enable testssl.sh (deep TLS audit on HTTPS ports)',
+        'testssl_severity': 'testssl.sh: minimum severity (LOW / MEDIUM / HIGH / CRITICAL)',
         // Brute Force Dictionary
         'dictionary_mode': 'Wordlist',
         'dictionary_users_custom': 'Custom Users File (path or filename in resources/dictionary/)',

@@ -56,6 +56,13 @@
         "b_parent": null
     },
     {
+        "b_module": "testssl_scanner",
+        "b_class": "TestSSLScanner",
+        "b_port": null,
+        "b_status": "tls_audit",
+        "b_parent": null
+    },
+    {
         "b_module": "smb_connector",
         "b_class": "SMBBruteforce",
         "b_port": 445,
@@ -81,6 +88,13 @@
         "b_class": "NetworkScanner",
         "b_port": null,
         "b_status": "network_scanner",
+        "b_parent": null
+    },
+    {
+        "b_module": "searchsploit_enricher",
+        "b_class": "SearchSploitEnricher",
+        "b_port": null,
+        "b_status": "exploit_lookup",
         "b_parent": null
     },
     {

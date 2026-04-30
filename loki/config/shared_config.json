@@ -87,7 +87,8 @@
         "9e:67:ba:fa:09:3a",
         "f6:1d:0c:c9:74:38",
         "52:45:7f:ba:64:e9",
-        "4e:a7:97:38:ac:5d"
+        "4e:a7:97:38:ac:5d",
+        "e6:ed:38:04:37:d5"
     ],
     "ip_scan_blacklist": [],
     "__title_stealing__": "File Stealing",
@@ -178,6 +179,9 @@
     "nuclei_severity": "medium,high,critical",
     "nuclei_rate_limit": 50,
     "nuclei_templates_dir": "",
+    "enable_searchsploit": false,
+    "enable_testssl": false,
+    "testssl_severity": "HIGH",
     "__title_brute_force__": "Brute Force Dictionary",
     "dictionary_mode": "default",
     "dictionary_users_custom": "",

@@ -114,6 +114,24 @@ else
     log "nuclei already installed: $(nuclei -version 2>&1 | head -1)"
 fi
 
+# --- 2c. Optional: searchsploit (Exploit-DB CLI for CVE → exploit mapping) ---
+if ! command -v searchsploit &>/dev/null; then
+    log "Installing searchsploit (Exploit-DB CLI)…"
+    if [[ ! -d /opt/exploitdb ]]; then
+        sudo git clone --depth 1 https://gitlab.com/exploit-database/exploitdb.git /opt/exploitdb || warn "searchsploit clone failed"
+    fi
+    [[ -f /opt/exploitdb/searchsploit ]] && sudo ln -sf /opt/exploitdb/searchsploit /usr/local/bin/searchsploit
+fi
+
+# --- 2d. Optional: testssl.sh (TLS audit) ---
+if ! command -v testssl.sh &>/dev/null; then
+    log "Installing testssl.sh (TLS audit)…"
+    if [[ ! -d /opt/testssl ]]; then
+        sudo git clone --depth 1 https://github.com/drwetter/testssl.sh.git /opt/testssl || warn "testssl.sh clone failed"
+    fi
+    [[ -f /opt/testssl/testssl.sh ]] && sudo ln -sf /opt/testssl/testssl.sh /usr/local/bin/testssl.sh && sudo chmod +x /opt/testssl/testssl.sh
+fi
+
 # --- 3. Python venv ---
 log "Creating Python virtualenv at .venv/"
 python3 -m venv .venv

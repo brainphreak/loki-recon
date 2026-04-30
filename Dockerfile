@@ -21,7 +21,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
         unzip \
+        git \
+        bsdmainutils \
+        coreutils \
+        bind9-dnsutils \
+        openssl \
     && rm -rf /var/lib/apt/lists/*
+
+# --- searchsploit (Exploit-DB CLI) ---
+# Tiny offline DB of public exploit modules; we map CVEs found by NSE/Nuclei
+# to their Exploit-DB entries for "this is exploitable, here's how" context.
+RUN git clone --depth 1 https://gitlab.com/exploit-database/exploitdb.git /opt/exploitdb \
+    && ln -sf /opt/exploitdb/searchsploit /usr/local/bin/searchsploit \
+    && /usr/local/bin/searchsploit -h >/dev/null 2>&1 || true
+
+# --- testssl.sh (comprehensive TLS audit) ---
+RUN git clone --depth 1 https://github.com/drwetter/testssl.sh.git /opt/testssl \
+    && ln -sf /opt/testssl/testssl.sh /usr/local/bin/testssl.sh \
+    && chmod +x /opt/testssl/testssl.sh
 
 # --- Nuclei (templated vulnerability scanner from ProjectDiscovery) ---
 # Auto-detect arch and pull the matching release tarball. Binary lives at

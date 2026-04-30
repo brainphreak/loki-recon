@@ -430,7 +430,7 @@ var AttacksTab = {
             var text = el.textContent || '';
             var hasRunAllEnd = text.includes('RunAllAttacks COMPLETE');
             var hasLifecycleEnd = !hasRunAllEnd && text.includes('[LIFECYCLE]') && text.includes('ENDED');
-            var hasScanEnd = !hasRunAllEnd && (text.includes('ENDED (success)') || text.includes('ENDED (failure)'));
+            var hasScanEnd = !hasRunAllEnd && /ENDED \([^)]+\)/.test(text);
             if (hasRunAllEnd || hasLifecycleEnd || hasScanEnd) {
                 self.attackFinished(true, actionName + ' completed');
             }

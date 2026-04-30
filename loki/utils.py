@@ -483,8 +483,9 @@ class WebUtils:
                     'TestSSLScanner': 'testssl_scanner',
                 }[action_class])
                 scan_target_ip = ip
-                self.logger.info(f"Executing {action_class} on {scan_target_ip if scan_target_ip else 'all hosts'}...")
+                self.logger.info(f"[LIFECYCLE] {action_class} STARTED on {scan_target_ip if scan_target_ip else 'all hosts'}")
                 import threading
+                start_time_outer = datetime.now()
 
                 def run_single_vuln_scan():
                     try:
@@ -498,6 +499,8 @@ class WebUtils:
                                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                                 row[action_class] = f'{result}_{timestamp}'
                                 self.shared_data.write_data(current_data)
+                                duration = (datetime.now() - start_time_outer).total_seconds()
+                                self.logger.info(f"[LIFECYCLE] {action_class} ENDED ({result}) for {scan_target_ip} in {duration:.1f}s")
                             else:
                                 self.logger.warning(f"No data found for IP: {scan_target_ip}")
                         else:
@@ -509,8 +512,11 @@ class WebUtils:
                                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                                     row[action_class] = f'{result}_{timestamp}'
                             self.shared_data.write_data(current_data)
+                            duration = (datetime.now() - start_time_outer).total_seconds()
+                            self.logger.info(f"[LIFECYCLE] {action_class} ENDED (all hosts) in {duration:.1f}s")
                     except Exception as e:
                         self.logger.error(f"Error in {action_class} thread: {e}")
+                        self.logger.info(f"[LIFECYCLE] {action_class} ENDED (failure)")
                     finally:
                         self.shared_data.lokiorch_status = "IDLE"
                         self.shared_data.lokistatustext2 = ""
@@ -532,8 +538,9 @@ class WebUtils:
                 for sc in ('NucleiScanner', 'SearchSploitEnricher', 'TestSSLScanner'):
                     self.ensure_vuln_scanner(sc)
                 all_ip = ip
-                self.logger.info(f"Executing all vulnerability scanners on {all_ip if all_ip else 'all hosts'}...")
+                self.logger.info(f"[LIFECYCLE] RunAllVulnScanners STARTED on {all_ip if all_ip else 'all hosts'}")
                 import threading
+                run_all_start = datetime.now()
 
                 def run_all_vuln_scans():
                     try:
@@ -574,8 +581,11 @@ class WebUtils:
                                 except Exception as ex:
                                     self.logger.error(f"{sc_name} failed for {target_ip}: {ex}")
                             self.shared_data.write_data(current_data)
+                        duration = (datetime.now() - run_all_start).total_seconds()
+                        self.logger.info(f"[LIFECYCLE] RunAllVulnScanners ENDED for {all_ip if all_ip else 'all hosts'} in {duration:.1f}s")
                     except Exception as e:
                         self.logger.error(f"Error in RunAllVulnScanners thread: {e}")
+                        self.logger.info(f"[LIFECYCLE] RunAllVulnScanners ENDED (failure)")
                     finally:
                         self.shared_data.lokiorch_status = "IDLE"
                         self.shared_data.lokistatustext2 = ""

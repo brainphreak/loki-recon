@@ -204,6 +204,10 @@ class WebUtils:
                 'StealFilesTelnet': 'Telnet Steal Files',
                 'NetworkScanner': 'Network Scanner',
                 'NmapVulnScanner': 'Nmap Vuln Scanner',
+                'NucleiScanner': 'Nuclei Scanner',
+                'SearchSploitEnricher': 'SearchSploit Enricher',
+                'TestSSLScanner': 'TestSSL Scanner',
+                'RunAllVulnScanners': 'All Vuln Scanners',
                 'RunAllAttacks': 'All Attacks',
             }
 
@@ -287,7 +291,8 @@ class WebUtils:
                 'SMBBruteforce', 'RDPBruteforce', 'SQLBruteforce',
                 'StealFilesSSH', 'StealFilesFTP', 'StealFilesTelnet',
                 'StealFilesSMB', 'StealDataSQL',
-                'NmapVulnScanner'
+                'NmapVulnScanner', 'NucleiScanner',
+                'SearchSploitEnricher', 'TestSSLScanner'
             ]
             hosts = []
             for row in data:

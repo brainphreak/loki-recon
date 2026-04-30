@@ -62,32 +62,24 @@ class Loki:
 
 
     def check_and_start_orchestrator(self):
-        """Check Wi-Fi and start the orchestrator if connected."""
-        if self.is_wifi_connected():
-            self.wifi_connected = True
-            if self.orchestrator_thread is None or not self.orchestrator_thread.is_alive():
-                self.start_orchestrator()
-        else:
-            self.wifi_connected = False
-            logger.info("Waiting for Wi-Fi connection to start Orchestrator...")
+        """Start the orchestrator if not already running."""
+        # Start orchestrator regardless of connection type (Wi-Fi, wired, Docker, etc.)
+        if self.orchestrator_thread is None or not self.orchestrator_thread.is_alive():
+            self.start_orchestrator()
 
     def start_orchestrator(self):
         """Start the orchestrator thread."""
         with self._orchestrator_lock:  # Prevent race condition
-            self.is_wifi_connected()  # reCheck if Wi-Fi is connected before starting the orchestrator
-            if self.wifi_connected:  # Check if Wi-Fi is connected before starting the orchestrator
-                if self.orchestrator_thread is None or not self.orchestrator_thread.is_alive():
-                    logger.info("Starting Orchestrator thread...")
-                    self.shared_data.orchestrator_should_exit = False
-                    self.shared_data.manual_mode = False
-                    self.orchestrator = Orchestrator()
-                    self.orchestrator_thread = threading.Thread(target=self.orchestrator.run)
-                    self.orchestrator_thread.start()
-                    logger.info("Orchestrator thread started, automatic mode activated.")
-                else:
-                    logger.info("Orchestrator thread is already running.")
+            if self.orchestrator_thread is None or not self.orchestrator_thread.is_alive():
+                logger.info("Starting Orchestrator thread...")
+                self.shared_data.orchestrator_should_exit = False
+                self.shared_data.manual_mode = False
+                self.orchestrator = Orchestrator()
+                self.orchestrator_thread = threading.Thread(target=self.orchestrator.run)
+                self.orchestrator_thread.start()
+                logger.info("Orchestrator thread started, automatic mode activated.")
             else:
-                logger.warning("Cannot start Orchestrator: Wi-Fi is not connected.")
+                logger.info("Orchestrator thread is already running.")
 
     def stop_orchestrator(self):
         """Stop the orchestrator thread."""

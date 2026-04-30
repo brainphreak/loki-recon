@@ -37,10 +37,20 @@ class Orchestrator:
         self.standalone_actions = []  # List of standalone actions to be executed
         self.failed_scans_count = 0  # Count the number of failed scans
         self.network_scanner = None
+        self.nmap_vuln_scanner = None
+        self.nuclei_scanner = None
+        self.searchsploit_scanner = None
+        self.testssl_scanner = None
         self.last_vuln_scan_time = datetime.min  # Set the last vulnerability scan time to the minimum datetime value
         self.load_actions()  # Load all actions from the actions file
         actions_loaded = [action.__class__.__name__ for action in self.actions + self.standalone_actions]  # Get the names of the loaded actions
+        vuln_scanners = []
+        if self.nmap_vuln_scanner: vuln_scanners.append("NmapVulnScanner")
+        if self.nuclei_scanner: vuln_scanners.append("NucleiScanner")
+        if self.searchsploit_scanner: vuln_scanners.append("SearchSploitEnricher")
+        if self.testssl_scanner: vuln_scanners.append("TestSSLScanner")
         logger.info(f"Actions loaded: {actions_loaded}")
+        logger.info(f"Vulnerability scanners loaded: {vuln_scanners}")
         self.semaphore = threading.Semaphore(10)  # Limit the number of active threads to 10
 
         # Read and validate attack ordering strategy
@@ -136,6 +146,12 @@ class Orchestrator:
                 self.load_scanner(module_name)
             elif module_name == 'nmap_vuln_scanner':
                 self.load_nmap_vuln_scanner(module_name)
+            elif module_name == 'nuclei_scanner':
+                self.load_nuclei_scanner(module_name)
+            elif module_name == 'searchsploit_enricher':
+                self.load_searchsploit_scanner(module_name)
+            elif module_name == 'testssl_scanner':
+                self.load_testssl_scanner(module_name)
             else:
                 self.load_action(module_name, action)
 
@@ -148,6 +164,36 @@ class Orchestrator:
     def load_nmap_vuln_scanner(self, module_name):
         """Load the nmap vulnerability scanner"""
         self.nmap_vuln_scanner = NmapVulnScanner(self.shared_data)
+
+    def load_nuclei_scanner(self, module_name):
+        """Load the nuclei vulnerability scanner"""
+        try:
+            module = importlib.import_module(f'actions.{module_name}')
+            NucleiScanner = getattr(module, 'NucleiScanner')
+            self.nuclei_scanner = NucleiScanner(self.shared_data)
+        except (ImportError, AttributeError) as e:
+            logger.error(f"Failed to load {module_name}: {e}")
+            self.nuclei_scanner = None
+
+    def load_searchsploit_scanner(self, module_name):
+        """Load the searchsploit enricher"""
+        try:
+            module = importlib.import_module(f'actions.{module_name}')
+            SearchSploitEnricher = getattr(module, 'SearchSploitEnricher')
+            self.searchsploit_scanner = SearchSploitEnricher(self.shared_data)
+        except (ImportError, AttributeError) as e:
+            logger.error(f"Failed to load {module_name}: {e}")
+            self.searchsploit_scanner = None
+
+    def load_testssl_scanner(self, module_name):
+        """Load the testssl scanner"""
+        try:
+            module = importlib.import_module(f'actions.{module_name}')
+            TestSSLScanner = getattr(module, 'TestSSLScanner')
+            self.testssl_scanner = TestSSLScanner(self.shared_data)
+        except (ImportError, AttributeError) as e:
+            logger.error(f"Failed to load {module_name}: {e}")
+            self.testssl_scanner = None
 
     def load_action(self, module_name, action):
         """Load an action from the actions file"""
@@ -331,14 +377,276 @@ class Orchestrator:
             self.shared_data.write_data(current_data)
             return False
 
+    def _run_nuclei_scan_single(self, row, current_data):
+        """Run nuclei scan on a single host with retry logic. Returns True if scan executed."""
+        if not getattr(self.shared_data, 'enable_nuclei', False):
+            return False
+
+        status_key = "NucleiScanner"
+        ip = row["IPs"]
+
+        # Skip IPs not in the target network
+        if not self.is_ip_in_target_network(ip):
+            return False
+
+        # Check existing scan status for this host
+        scan_status = row.get(status_key, "")
+
+        # Skip if already scanned successfully and no retry
+        if 'success' in scan_status:
+            if not self.shared_data.retry_success_actions:
+                return False
+            try:
+                last_time = datetime.strptime(
+                    scan_status.split('_')[1] + "_" + scan_status.split('_')[2],
+                    "%Y%m%d_%H%M%S"
+                )
+                if datetime.now() < last_time + timedelta(seconds=self.shared_data.success_retry_delay):
+                    return False
+            except (ValueError, IndexError):
+                pass
+
+        # Check failed status with retry limits
+        if 'failed' in scan_status and not getattr(self.shared_data, 'retry_failed_actions', True):
+            return False
+        if 'failed' in scan_status:
+            try:
+                parts = scan_status.split('_')
+                fail_count = int(parts[1])
+                last_time = datetime.strptime(parts[2] + "_" + parts[3], "%Y%m%d_%H%M%S")
+                max_retries = getattr(self.shared_data, 'max_failed_retries', 3)
+                if fail_count >= max_retries:
+                    return False
+                if datetime.now() < last_time + timedelta(seconds=self.shared_data.failed_retry_delay):
+                    return False
+            except (ValueError, IndexError):
+                pass
+
+        # Execute nuclei scan
+        try:
+            self.shared_data.lokiorch_status = "NucleiScanner"
+            # Nuclei scanner expects execute(ip, ports, row, status_key) method
+            ports = row["Ports"].split(';')
+            result = self.nuclei_scanner.execute(ip, ports, row, status_key)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            if result == 'success':
+                row[status_key] = f'success_{timestamp}'
+                logger.info(f"NucleiScanner ENDED (success) for {ip}")
+            else:
+                prev_count = 0
+                if 'failed' in scan_status:
+                    try:
+                        prev_count = int(scan_status.split('_')[1])
+                    except (ValueError, IndexError):
+                        pass
+                row[status_key] = f'failed_{prev_count + 1}_{timestamp}'
+                logger.error(f"NucleiScanner ENDED (failed) for {ip}")
+            self.shared_data.write_data(current_data)
+            return True
+        except Exception as e:
+            logger.error(f"Nuclei scan failed for {ip}: {e}")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            prev_count = 0
+            if 'failed' in scan_status:
+                try:
+                    prev_count = int(scan_status.split('_')[1])
+                except (ValueError, IndexError):
+                    pass
+            row[status_key] = f'failed_{prev_count + 1}_{timestamp}'
+            self.shared_data.write_data(current_data)
+            return False
+
+    def _run_searchsploit_scan_single(self, row, current_data):
+        """Run searchsploit enrichment on a single host with retry logic. Returns True if scan executed."""
+        if not getattr(self.shared_data, 'enable_searchsploit', False):
+            return False
+
+        status_key = "SearchSploitEnricher"
+        ip = row["IPs"]
+
+        # Skip IPs not in the target network
+        if not self.is_ip_in_target_network(ip):
+            return False
+
+        # Check existing scan status for this host
+        scan_status = row.get(status_key, "")
+
+        # Skip if already scanned successfully and no retry
+        if 'success' in scan_status:
+            if not self.shared_data.retry_success_actions:
+                return False
+            try:
+                last_time = datetime.strptime(
+                    scan_status.split('_')[1] + "_" + scan_status.split('_')[2],
+                    "%Y%m%d_%H%M%S"
+                )
+                if datetime.now() < last_time + timedelta(seconds=self.shared_data.success_retry_delay):
+                    return False
+            except (ValueError, IndexError):
+                pass
+
+        # Check failed status with retry limits
+        if 'failed' in scan_status and not getattr(self.shared_data, 'retry_failed_actions', True):
+            return False
+        if 'failed' in scan_status:
+            try:
+                parts = scan_status.split('_')
+                fail_count = int(parts[1])
+                last_time = datetime.strptime(parts[2] + "_" + parts[3], "%Y%m%d_%H%M%S")
+                max_retries = getattr(self.shared_data, 'max_failed_retries', 3)
+                if fail_count >= max_retries:
+                    return False
+                if datetime.now() < last_time + timedelta(seconds=self.shared_data.failed_retry_delay):
+                    return False
+            except (ValueError, IndexError):
+                pass
+
+        # Execute searchsploit enrichment
+        try:
+            self.shared_data.lokiorch_status = "SearchSploitEnricher"
+            # SearchSploit enricher expects execute(ip, ports, row, status_key) method
+            ports = row["Ports"].split(';')
+            result = self.searchsploit_scanner.execute(ip, ports, row, status_key)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            if result == 'success':
+                row[status_key] = f'success_{timestamp}'
+                logger.info(f"SearchSploitEnricher ENDED (success) for {ip}")
+            else:
+                prev_count = 0
+                if 'failed' in scan_status:
+                    try:
+                        prev_count = int(scan_status.split('_')[1])
+                    except (ValueError, IndexError):
+                        pass
+                row[status_key] = f'failed_{prev_count + 1}_{timestamp}'
+                logger.error(f"SearchSploitEnricher ENDED (failed) for {ip}")
+            self.shared_data.write_data(current_data)
+            return True
+        except Exception as e:
+            logger.error(f"SearchSploit enrichment failed for {ip}: {e}")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            prev_count = 0
+            if 'failed' in scan_status:
+                try:
+                    prev_count = int(scan_status.split('_')[1])
+                except (ValueError, IndexError):
+                    pass
+            row[status_key] = f'failed_{prev_count + 1}_{timestamp}'
+            self.shared_data.write_data(current_data)
+            return False
+
+    def _run_testssl_scan_single(self, row, current_data):
+        """Run testssl scan on a single host with retry logic. Returns True if scan executed."""
+        if not getattr(self.shared_data, 'enable_testssl', False):
+            return False
+
+        status_key = "TestSSLScanner"
+        ip = row["IPs"]
+
+        # Skip IPs not in the target network
+        if not self.is_ip_in_target_network(ip):
+            return False
+
+        # Check existing scan status for this host
+        scan_status = row.get(status_key, "")
+
+        # Skip if already scanned successfully and no retry
+        if 'success' in scan_status:
+            if not self.shared_data.retry_success_actions:
+                return False
+            try:
+                last_time = datetime.strptime(
+                    scan_status.split('_')[1] + "_" + scan_status.split('_')[2],
+                    "%Y%m%d_%H%M%S"
+                )
+                if datetime.now() < last_time + timedelta(seconds=self.shared_data.success_retry_delay):
+                    return False
+            except (ValueError, IndexError):
+                pass
+
+        # Check failed status with retry limits
+        if 'failed' in scan_status and not getattr(self.shared_data, 'retry_failed_actions', True):
+            return False
+        if 'failed' in scan_status:
+            try:
+                parts = scan_status.split('_')
+                fail_count = int(parts[1])
+                last_time = datetime.strptime(parts[2] + "_" + parts[3], "%Y%m%d_%H%M%S")
+                max_retries = getattr(self.shared_data, 'max_failed_retries', 3)
+                if fail_count >= max_retries:
+                    return False
+                if datetime.now() < last_time + timedelta(seconds=self.shared_data.failed_retry_delay):
+                    return False
+            except (ValueError, IndexError):
+                pass
+
+        # Execute testssl scan
+        try:
+            self.shared_data.lokiorch_status = "TestSSLScanner"
+            # TestSSL scanner expects execute(ip, ports, row, status_key) method
+            ports = row["Ports"].split(';')
+            result = self.testssl_scanner.execute(ip, ports, row, status_key)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            if result == 'success':
+                row[status_key] = f'success_{timestamp}'
+                logger.info(f"TestSSLScanner ENDED (success) for {ip}")
+            else:
+                prev_count = 0
+                if 'failed' in scan_status:
+                    try:
+                        prev_count = int(scan_status.split('_')[1])
+                    except (ValueError, IndexError):
+                        pass
+                row[status_key] = f'failed_{prev_count + 1}_{timestamp}'
+                logger.error(f"TestSSLScanner ENDED (failed) for {ip}")
+            self.shared_data.write_data(current_data)
+            return True
+        except Exception as e:
+            logger.error(f"TestSSL scan failed for {ip}: {e}")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            prev_count = 0
+            if 'failed' in scan_status:
+                try:
+                    prev_count = int(scan_status.split('_')[1])
+                except (ValueError, IndexError):
+                    pass
+            row[status_key] = f'failed_{prev_count + 1}_{timestamp}'
+            self.shared_data.write_data(current_data)
+            return False
+
     def run_vuln_scans(self, current_data):
-        """Run vulnerability scans on all alive hosts."""
+        """Run vulnerability scanning pipeline on all alive hosts."""
         for row in current_data:
             if self.shared_data.orchestrator_should_exit or self.shared_data.manual_mode:
                 break
             if row["Alive"] != '1':
                 continue
-            self._run_vuln_scan_single(row, current_data)
+
+            # Sequential vulnerability scanning pipeline
+            ip = row["IPs"]
+            logger.info(f"Starting vulnerability scan pipeline for {ip}")
+
+            # 1. Nmap vulnerability scan (always first)
+            if self.nmap_vuln_scanner:
+                logger.info(f"Running nmap vulnerability scan for {ip}")
+                self._run_vuln_scan_single(row, current_data)
+
+            # 2. Nuclei scan (if enabled)
+            if self.nuclei_scanner and getattr(self.shared_data, 'enable_nuclei', False):
+                logger.info(f"Running nuclei scan for {ip}")
+                self._run_nuclei_scan_single(row, current_data)
+
+            # 3. SearchSploit enrichment (if enabled)
+            if self.searchsploit_scanner and getattr(self.shared_data, 'enable_searchsploit', False):
+                logger.info(f"Running searchsploit enrichment for {ip}")
+                self._run_searchsploit_scan_single(row, current_data)
+
+            # 4. TestSSL scan (if enabled)
+            if self.testssl_scanner and getattr(self.shared_data, 'enable_testssl', False):
+                logger.info(f"Running testssl scan for {ip}")
+                self._run_testssl_scan_single(row, current_data)
+
+            logger.info(f"Vulnerability scan pipeline completed for {ip}")
 
     def process_per_host(self, current_data):
         """Complete ALL attacks (brute -> steal -> vuln) on each host before moving to the next."""

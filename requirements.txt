@@ -1,0 +1,31 @@
+# Loki-Pi Python dependencies.
+#
+# pip selects the right wheel per architecture (aarch64 / armv7l / armv6l / x86_64)
+# automatically when this file is installed. No vendored binaries.
+#
+# Targeted Python: 3.11 (Raspberry Pi OS Bookworm default).
+
+# --- Direct imports from the Loki source ---
+paramiko>=3.4,<4         # SSH client (ssh_connector, steal_files_ssh)
+PyMySQL>=1.1,<2          # MySQL client (sql_connector, steal_data_sql)
+python-nmap>=0.7.1,<1    # nmap result parser (scanning, nmap_vuln_scanner)
+getmac>=0.9,<1           # MAC address lookup (scanning)
+pysmb>=1.2.9,<2          # SMB client (smb_connector, steal_files_smb)
+
+# --- Transitive deps (pinned for reproducibility on arm64/armv7/armv6) ---
+cryptography>=42,<46     # Required by paramiko
+bcrypt>=4.1,<5           # Required by paramiko (Ed25519 host key support)
+PyNaCl>=1.5,<2           # Required by paramiko (modern KEX)
+cffi>=1.16,<2            # Required by cryptography / bcrypt
+pycparser>=2.21,<3       # Required by cffi
+pyasn1>=0.6,<0.7         # Required by pysmb
+
+# --- Web / API stack ---
+# The current web UI uses stdlib http.server. Phase 5+ may migrate to Flask
+# for SSE/JSON-API ergonomics. Adding Flask now so it is available without
+# another pip-install round-trip; it is small and ships arm64 wheels.
+Flask>=3.0,<4
+itsdangerous>=2.1,<3     # Flask dep, used for token signing if needed
+
+# --- LCD scene renderer (server-side image composition for /screen.png) ---
+Pillow>=10.0,<12

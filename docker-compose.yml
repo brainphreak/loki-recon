@@ -1,0 +1,48 @@
+# Loki-Pi dev environment.
+#
+# Brings up the Loki container on the same Docker bridge as the
+# vulnerable test rig (test_targets/docker-compose.yml), so Loki can
+# scan 172.16.52.228 directly with no host networking.
+#
+# Usage:
+#   # 1. start the vulnerable rig (creates the bjorn-testnet network)
+#   cd test_targets && docker compose up -d && cd ..
+#   # 2. start Loki
+#   docker compose up --build
+#   # 3. open http://localhost:8000/
+
+services:
+  loki:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    platform: linux/arm64
+    container_name: loki-pi-dev
+    hostname: loki-pi
+    networks:
+      bjorn-testnet:
+        ipv4_address: 172.16.52.10
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./loki:/app/loki
+      - ./loki.py:/app/loki.py
+      - ./requirements.txt:/app/requirements.txt
+      - loki-data:/data
+    environment:
+      LOKI_BIND: "0.0.0.0"
+      LOKI_PORT: "8000"
+      LOKI_DATA_DIR: "/data"
+      LOKI_LOG_LEVEL: "INFO"
+    restart: unless-stopped
+
+networks:
+  # Created by test_targets/docker-compose.yml. Compose prefixes the bridge
+  # with the project directory name (test_targets_bjorn-testnet); we
+  # reference it externally so we don't try to recreate it.
+  bjorn-testnet:
+    external: true
+    name: test_targets_bjorn-testnet
+
+volumes:
+  loki-data:

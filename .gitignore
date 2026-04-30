@@ -1,0 +1,39 @@
+# macOS
+.DS_Store
+
+# Python bytecode (regenerated automatically)
+__pycache__/
+*.pyc
+
+# Python venv
+.venv/
+venv/
+
+# Loki-Pi runtime data
+data/exfil/
+data/datastolen/
+config/api_token.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Runtime data created on Pager
+loot/
+logs/
+*.log
+
+# Local dev
+.env
+libs-old/
+dev_backup/
+
+# Archives / source files
+*.zip
+*.psd
+
+# Build outputs
+build-output/
+src/openssl-3.0.13/
+

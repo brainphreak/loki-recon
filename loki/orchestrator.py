@@ -685,31 +685,39 @@ class Orchestrator:
             if row["Alive"] != '1':
                 continue
 
-            # Sequential vulnerability scanning pipeline
             ip = row["IPs"]
-            logger.info(f"Starting vulnerability scan pipeline for {ip}")
 
-            # 1. Nmap vulnerability scan (always first)
-            if self.nmap_vuln_scanner:
-                logger.info(f"Running nmap vulnerability scan for {ip}")
-                self._run_vuln_scan_single(row, current_data)
+            # Re-read this row's status from disk so concurrent writes
+            # (e.g. a manual scan that finished while this iteration was
+            # running) aren't ignored. Avoids re-scanning a host that was
+            # just successfully scanned in another thread.
+            try:
+                fresh_data = self.shared_data.read_data()
+                fresh_row = next((r for r in fresh_data if r["IPs"] == ip), None)
+                if fresh_row:
+                    for k in ("NmapVulnScanner", "NucleiScanner",
+                              "SearchSploitEnricher", "TestSSLScanner"):
+                        if k in fresh_row:
+                            row[k] = fresh_row[k]
+            except Exception:
+                pass
 
-            # 2. Nuclei scan (if enabled)
+            ran_any = False
+
+            if self.nmap_vuln_scanner and self._run_vuln_scan_single(row, current_data):
+                ran_any = True
             if self.nuclei_scanner and getattr(self.shared_data, 'enable_nuclei', False):
-                logger.info(f"Running nuclei scan for {ip}")
-                self._run_nuclei_scan_single(row, current_data)
-
-            # 3. SearchSploit enrichment (if enabled)
+                if self._run_nuclei_scan_single(row, current_data):
+                    ran_any = True
             if self.searchsploit_scanner and getattr(self.shared_data, 'enable_searchsploit', False):
-                logger.info(f"Running searchsploit enrichment for {ip}")
-                self._run_searchsploit_scan_single(row, current_data)
-
-            # 4. TestSSL scan (if enabled)
+                if self._run_searchsploit_scan_single(row, current_data):
+                    ran_any = True
             if self.testssl_scanner and getattr(self.shared_data, 'enable_testssl', False):
-                logger.info(f"Running testssl scan for {ip}")
-                self._run_testssl_scan_single(row, current_data)
+                if self._run_testssl_scan_single(row, current_data):
+                    ran_any = True
 
-            logger.info(f"Vulnerability scan pipeline completed for {ip}")
+            if ran_any:
+                logger.info(f"Vulnerability scan pipeline completed for {ip}")
 
     def process_per_host(self, current_data):
         """Complete ALL attacks (brute -> steal -> vuln) on each host before moving to the next."""

@@ -1,0 +1,46 @@
+# Loki-Pi DHCP network environment.
+#
+# Uses macvlan to create a virtual interface that gets its own IP
+# from your router's DHCP pool. Container appears as separate device
+# on your network with its own 10.0.0.X IP address.
+#
+# Usage:
+#   # First create the macvlan network (run once)
+#   docker network create -d macvlan \
+#     --subnet=10.0.0.0/24 \
+#     --gateway=10.0.0.1 \
+#     -o parent=en0 \
+#     loki-macvlan
+#
+#   # Then start the container
+#   docker compose -f docker-compose.dhcp.yml up --build
+
+services:
+  loki:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    platform: linux/arm64
+    container_name: loki-pi-dhcp
+    hostname: loki-dhcp
+    networks:
+      loki-macvlan:
+    volumes:
+      - ./loki:/app/loki
+      - ./loki.py:/app/loki.py
+      - ./requirements.txt:/app/requirements.txt
+      - loki-dhcp-data:/data
+    environment:
+      LOKI_BIND: "0.0.0.0"
+      LOKI_PORT: "8000"
+      LOKI_DATA_DIR: "/data"
+      LOKI_LOG_LEVEL: "INFO"
+      # No BJORN_IP needed - auto-detection will work with real IP
+    restart: unless-stopped
+
+networks:
+  loki-macvlan:
+    external: true
+
+volumes:
+  loki-dhcp-data:

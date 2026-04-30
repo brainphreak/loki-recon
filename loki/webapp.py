@@ -267,6 +267,8 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self.web_utils.serve_logs(self, current_action_only=current_action_only, since_timestamp=since_timestamp)
         elif self.path == '/list_credentials':
             self.web_utils.serve_credentials_data(self)
+        elif self.path == '/download_credentials':
+            self.web_utils.download_credentials(self)
         elif self.path.startswith('/list_files'):
             self.web_utils.list_files_endpoint(self)
         elif self.path.startswith('/download_file'):
@@ -335,6 +337,16 @@ class CustomHandler(http.server.SimpleHTTPRequestHandler):
             self.web_utils.execute_manual_attack(self)
         elif self.path == '/clear_hosts':  # Clear discovered hosts to start fresh
             self.web_utils.clear_hosts(self)
+        elif self.path == '/clear_scan_logs':
+            self.web_utils.clear_scan_logs(self)
+        elif self.path == '/clear_stats':
+            self.web_utils.clear_stats(self)
+        elif self.path == '/clear_stolen_files':
+            self.web_utils.clear_stolen_files(self)
+        elif self.path == '/clear_credentials':
+            self.web_utils.clear_credentials(self)
+        elif self.path == '/clear_all':
+            self.web_utils.clear_all(self)
         elif self.path == '/stop_manual_attack':  # Stop running manual attack without touching orchestrator
             self.web_utils.stop_manual_attack(self)
         elif self.path == '/mark_action_start':  # Mark action start time for log filtering

@@ -172,14 +172,18 @@ const DashboardTab = {
 
             const statusEl = document.getElementById('dash-orch-status');
             const detailEl = document.getElementById('dash-status-detail');
+            // Status keys: prefer Loki-port names, fall back to legacy Bjorn-pager keys.
+            const statusText = data.lokistatustext || data.bjornstatustext;
+            const statusText2 = data.lokistatustext2 || data.bjornstatustext2;
+            const orchStatus = data.lokiorch_status || data.bjornorch_status;
             if (statusEl) {
-                statusEl.textContent = this.splitCamelCase(data.bjornstatustext) || 'IDLE';
+                statusEl.textContent = this.splitCamelCase(statusText) || 'IDLE';
             }
             if (detailEl) {
                 const parts = [];
-                if (data.bjornstatustext2) parts.push(this.splitCamelCase(data.bjornstatustext2));
-                if (data.bjornorch_status && data.bjornorch_status !== 'IDLE') {
-                    parts.push(this.splitCamelCase(data.bjornorch_status));
+                if (statusText2) parts.push(this.splitCamelCase(statusText2));
+                if (orchStatus && orchStatus !== 'IDLE') {
+                    parts.push(this.splitCamelCase(orchStatus));
                 }
                 detailEl.textContent = parts.join(' - ');
             }

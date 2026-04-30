@@ -279,10 +279,12 @@ class NmapVulnScanner:
                 timeout=effective_timeout
             )
             elapsed = time.time() - start
-            # Warn only if nmap returned suspiciously fast with no output —
-            # indicates scripts failed to load, not just "no vulns found"
+            # The pager-era heuristic ("fast + empty = scripts not installed")
+            # false-positives on Pi / x86 where nmap is much faster than MIPS.
+            # On apt-installed nmap, /usr/share/nmap/scripts/ ships ~600 scripts;
+            # empty output just means no findings. Demoted to debug.
             if result.returncode == 0 and '|' not in result.stdout and elapsed < 5:
-                logger.warning(f"nmap returned no script output in {elapsed:.1f}s for {ip}:{port} — NSE scripts may not be installed")
+                logger.debug(f"nmap finished in {elapsed:.1f}s with no findings for {ip}:{port}")
             return result.stdout, True
         except subprocess.TimeoutExpired:
             return "", False
@@ -315,12 +317,19 @@ class NmapVulnScanner:
         return combined, batches_succeeded > 0
 
     def _scan_regular_port(self, ip, port):
-        """Scan a non-HTTP port with --script vuln in a single call."""
+        """Scan a non-HTTP port with NSE scripts.
+        Mode 'lightweight' = `vuln` category (curated, fast).
+        Mode 'full' = `vuln,exploit,auth,default` (broader, slower).
+        """
         port_timeout = getattr(self.shared_data, 'vuln_scan_timeout', 120)
-        scripts = "vuln"
+        mode = getattr(self.shared_data, 'config', {}).get('vuln_scan_mode', 'lightweight')
+        if mode == 'full':
+            scripts = "vuln,exploit,auth,default"
+        else:
+            scripts = "vuln"
         if self._vulners_available:
-            scripts = "vuln,vulners"
-        logger.info(f"Vuln scanning {ip} port {port}...")
+            scripts = scripts + ",vulners"
+        logger.info(f"Vuln scanning {ip} port {port} (mode={mode})...")
         stdout, ok = self._run_nmap_scripts(ip, port, scripts, 30, port_timeout)
         if not ok:
             logger.warning(f"Vuln scan timeout on {ip}:{port} after {port_timeout}s, moving to next port")

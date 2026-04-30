@@ -84,6 +84,36 @@ case "$PM" in
     zypper) install_zypper ;;
 esac
 
+# --- 2b. Optional: Nuclei (ProjectDiscovery's templated vuln scanner) ---
+if ! command -v nuclei &>/dev/null; then
+    log "Installing nuclei (templated vuln scanner)…"
+    NUCLEI_VERSION="${NUCLEI_VERSION:-3.3.5}"
+    arch="$(uname -m)"
+    case "$arch" in
+        x86_64)         nuclei_arch="linux_amd64" ;;
+        aarch64|arm64)  nuclei_arch="linux_arm64" ;;
+        armv7l)         nuclei_arch="linux_armv7" ;;
+        armv6l)         nuclei_arch="linux_armv6" ;;
+        *)              nuclei_arch="" ;;
+    esac
+    if [[ -n "$nuclei_arch" ]]; then
+        url="https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VERSION}/nuclei_${NUCLEI_VERSION}_${nuclei_arch}.zip"
+        tmp="$(mktemp -d)"
+        if curl -fsSL -o "$tmp/n.zip" "$url" \
+            && (cd "$tmp" && unzip -q n.zip nuclei) \
+            && sudo install -m 0755 "$tmp/nuclei" /usr/local/bin/nuclei; then
+            log "nuclei installed: $(/usr/local/bin/nuclei -version 2>&1 | head -1)"
+        else
+            warn "nuclei download failed; you can install manually later"
+        fi
+        rm -rf "$tmp"
+    else
+        warn "Unsupported arch ($arch) for nuclei; skipping"
+    fi
+else
+    log "nuclei already installed: $(nuclei -version 2>&1 | head -1)"
+fi
+
 # --- 3. Python venv ---
 log "Creating Python virtualenv at .venv/"
 python3 -m venv .venv

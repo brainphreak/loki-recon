@@ -876,9 +876,6 @@ select.form-input {
     min-height: 100px;
     max-height: 80vh;
     resize: vertical;
-    display: none;
-}
-.attack-log.visible {
     display: block;
 }
 
@@ -1296,6 +1293,32 @@ select.form-input {
     max-height: 400px;
     overflow-y: auto;
     color: var(--text-secondary);
+}
+.vuln-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 4px 0 12px 0;
+    padding: 8px;
+    background: var(--bg-elevated, #1a1a1a);
+    border-radius: 4px;
+}
+.vuln-filter-pill {
+    background: var(--bg-surface, #222);
+    color: var(--text-primary, #ddd);
+    border: 1px solid var(--border, #333);
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+}
+.vuln-filter-pill:hover { transform: translateY(-1px); }
+.vuln-filter-pill.active {
+    background: var(--gold, #c89b3c);
+    color: #000;
+    border-color: var(--gold, #c89b3c);
+    font-weight: 600;
 }
 .vuln-finding {
     background: var(--bg);

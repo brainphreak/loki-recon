@@ -1,117 +1,137 @@
-# Loki Web Interface
+# Web UI & JSON API
 
-Access the web UI at `http://<pager-ip>:8000`. It is a single-page app that provides real-time monitoring and control of Loki from any browser on the same network.
+The web UI lives at `http://<host>:8000/` and is served by `loki/webapp.py` (stdlib `http.server`). It's a single-page app: `index.html` + JS in `loki/web/scripts/` consumes the JSON endpoints below.
 
-Only the active tab polls the server — inactive tabs stop polling to conserve device resources.
+## Tabs
 
-## Dashboard
+| Tab | What it shows |
+|---|---|
+| **Dashboard** | Live counters (hosts, ports, vulns, creds, files, attacks, score, level) + current orchestrator status |
+| **Hosts** | netkb.csv — discovered hosts, open ports, per-host attack history |
+| **Attacks** | Manual mode: pick a target/port/action and execute. Always-on log feed of orchestrator activity below the controls. |
+| **Loot** | Cracked credentials, stolen files, vuln findings, SQL dumps |
+| **Config** | All config keys grouped into sections; theme + orientation pickers; reset buttons |
+| **Terminal** | Live tail of all module logs |
+| **Display** | Server-side render of the LCD scene (`/screen.png`), so you see what the pager LCD *would* be drawing |
 
-<p align="center">
-  <img src="screenshots/02-webui-dashboard.png" width="700" alt="Dashboard">
-</p>
+## Public (no-auth) routes
 
-The Dashboard shows orchestrator status, a live stats grid (targets, credentials, attacks, vulns, ports, data stolen, zombies, level, gold, netKB), and an integrated log console with level filters (ALL/INFO/WARN/ERROR), auto-scroll, and incremental log fetching.
+These mirror the original web UI; the existing JS uses these:
 
-## Hosts
+| Route | Method | Returns |
+|---|---|---|
+| `/` (and `/dashboard`, `/hosts`, …) | GET | SPA shell (`index.html`) |
+| `/api/stats` | GET | dashboard counters + status as JSON |
+| `/api/theme` | GET | active theme palette + web title |
+| `/api/themes` | GET | list of available themes |
+| `/api/theme_font` | GET | theme title font (TTF) |
+| `/api/theme` | POST `{theme}` | switch active theme, reload assets, bust the LCD render cache |
+| `/load_config` | GET | current config (defaults merged with overrides) |
+| `/save_config` | POST `{key:value...}` | save config; triggers `load_theme` + dictionary reload + LCD cache bust |
+| `/restore_default_config` | GET | reset config.json to defaults |
+| `/get_networks` | GET | local non-loopback IPv4 interfaces with /CIDR |
+| `/network_data` | GET | HTML table view of netkb |
+| `/netkb_data_json` | GET | netkb.csv as JSON (ips + ports + actions) |
+| `/get_logs[?current=1]` | GET | aggregated logs across modules; `current=1` = since the last action started |
+| `/list_credentials` | GET | discovered creds across services |
+| `/list_files[?…]` | GET | exfiltrated file metadata |
+| `/download_file?…` | GET | download a stolen file |
+| `/api/host_loot_summary/<ip>` | GET | per-host loot rollup |
+| `/api/vulnerabilities[/<ip>]` | GET | vuln summary, optionally filtered |
+| `/screen.png` | GET | LCD scene render (PNG, 480×222 landscape or 222×480 portrait) |
+| `/manifest.json` | GET | PWA manifest (installable to home screen) |
+| `/clear_hosts` | POST | wipe netkb so hosts are rediscovered |
+| `/clear_scan_logs` | POST | truncate logs + wipe scan results + livestatus |
+| `/clear_stats` | POST | zero the persisted attacks counter |
+| `/clear_stolen_files` | POST | wipe stolen-files dir |
+| `/clear_credentials` | POST | wipe cracked-credentials dir |
+| `/clear_all` | POST | nuke everything except the config file |
+| `/start_orchestrator`, `/stop_orchestrator` | POST | toggle auto-mode |
+| `/execute_manual_attack` | POST | run one attack (manual mode) |
+| `/stop_manual_attack` | POST | stop the running manual attack |
+| `/events` | GET (SSE) | stream of state-change events from `display.broker` |
 
-<p align="center">
-  <img src="screenshots/03-webui-hostsview.png" width="700" alt="Hosts View">
-</p>
+## `/api/v1/*` — versioned JSON namespace (bearer-token auth)
 
-Host cards with color-coded status (green=alive, red=dead, gold=pwned) and per-protocol attack badges showing brute force and file steal results for each host. Click a host to expand details including open ports, credentials, and vulnerabilities.
+All endpoints under `/api/v1/` require an `Authorization: Bearer <token>` header. `/api/v1/events` also accepts `?token=<token>` for `EventSource`. The token is auto-generated on first run and saved to `state/api_token.json` (also printed to stdout on container start).
 
-<details>
-<summary>Host Export View</summary>
-<p align="center">
-  <img src="screenshots/04-webui-hosts-text-export.png" width="700" alt="Host Text Export">
-</p>
-</details>
+| Route | Method | Returns |
+|---|---|---|
+| `/api/v1/status` | GET | current state JSON (alias of `/api/stats`) |
+| `/api/v1/targets` | GET | netkb hosts + ports |
+| `/api/v1/targets/clear` | POST | wipe netkb |
+| `/api/v1/credentials` | GET | discovered creds |
+| `/api/v1/exfil` | GET | stolen files list |
+| `/api/v1/networks` | GET | local interfaces |
+| `/api/v1/themes` | GET | theme list + active |
+| `/api/v1/theme` | POST `{theme}` | switch theme |
+| `/api/v1/scan` | POST `{action}` | `start` / `stop` / `pause` orchestrator |
+| `/api/v1/events` | GET (SSE) | versioned event stream |
 
-## Attacks
+Example:
 
-<p align="center">
-  <img src="screenshots/11-webui-attack.png" width="700" alt="Attacks Tab">
-</p>
+```bash
+TOKEN=$(curl -s http://host:8000/state/api_token.json ...)  # or read from disk
+curl -H "Authorization: Bearer $TOKEN" http://host:8000/api/v1/status
+```
 
-Attack timeline with chronological history. Manual mode with target/port/action dropdowns, custom target input (any IP or hostname), execute and stop buttons, running status indicator, and live attack log output. Vulnerability scanning available per-port or across all open ports.
+## Server-Sent Events
 
-<details>
-<summary>Manual Attack Mode</summary>
-<p align="center">
-  <img src="screenshots/12-webui-manual-attack-mode.png" width="700" alt="Manual Attack Mode">
-</p>
+`/events` (and `/api/v1/events`) emits one event per state change with `id:`, `event:`, and `data:` fields. The display loop polls `shared_data` every 250 ms and broadcasts deltas to all subscribers. A 200-event ring buffer is replayed on connect.
 
-In manual mode, select a target, port, and action from the dropdowns. You can enter any IP address or hostname — including hosts on external networks. Each manual attack shows a live log of its progress.
-</details>
+Event types:
 
-## Loot
+| `event` | `data` |
+|---|---|
+| `display_started` / `display_stopped` | lifecycle |
+| `state` | `{field, value}` — one of `lokiorch_status`, `lokisay`, `lokistatustext`, `lokistatusimage_path`, `current_image_path`, `manual_mode`, `battery_level`, counters, theme name |
+| `loading` | `{message}` — startup loading text |
 
-The Loot tab has four sub-tabs:
+```javascript
+const es = new EventSource('/events');
+es.addEventListener('state', (e) => {
+    const ev = JSON.parse(e.data);
+    console.log('changed:', ev.field, '→', ev.value);
+});
+```
 
-### Credentials
+## Auth
 
-<p align="center">
-  <img src="screenshots/08-webui-loot-credentials.png" width="700" alt="Credentials">
-</p>
+- Original UI routes are open (no token required) so existing JS keeps working unchanged.
+- `/api/v1/*` requires the bearer token — bind to `0.0.0.0` and you can safely expose the API to scripts on the same host without exposing the legacy UI publicly.
+- For a hardened deployment, run loki behind nginx with HTTPS and IP-allowlist the legacy routes too.
 
-Cracked credentials grouped by protocol with username, password, host, and timestamp.
+## PWA install
 
-### Stolen Files
+`manifest.json` is linked from `index.html`. iOS Safari → Share → Add to Home Screen. Android Chrome → menu → Install app. The web UI then opens in standalone mode on the home screen.
 
-<p align="center">
-  <img src="screenshots/05-webui-loot-stolen-files.png" width="700" alt="Stolen Files">
-</p>
+## Development
 
-Collapsible file tree organized by protocol and host. Click any file to download it directly.
+The web UI source lives in `loki/web/`:
 
-### Vulnerabilities
+```
+loki/web/
+├── index.html
+├── manifest.json
+├── css/loki.css
+└── scripts/
+    ├── app.js              router, theme loader, App.api/post helpers
+    ├── dashboard.js        dashboard counters + live status
+    ├── network.js          host list
+    ├── attacks.js          manual mode + always-on log panel
+    ├── loot.js             credentials / files / vulns
+    ├── config.js           Config tab (auto-renders all keys from /load_config)
+    ├── loki.js             Display tab (LCD scene mirror + theme/orientation pickers)
+    ├── terminal.js         multi-module log tail
+    └── console.js          shared log rendering
+```
 
-<p align="center">
-  <img src="screenshots/06-webui-loot-cve-found.png" width="700" alt="Vulnerabilities">
-</p>
+Volume-mount the source in dev so JS edits are live without rebuilds:
 
-Discovered vulnerabilities with CVE details, severity ratings, and affected hosts/ports.
+```yaml
+# docker-compose.yml
+volumes:
+  - ./loki:/app/loki
+```
 
-### Attack Logs
-
-<p align="center">
-  <img src="screenshots/07-webui-loot-logfiles.png" width="700" alt="Attack Logs">
-</p>
-
-Categorized per-module log files with download links for offline analysis.
-
-## Config
-
-<p align="center">
-  <img src="screenshots/09-webui-config.png" width="700" alt="Config">
-</p>
-
-All settings from `shared_config.json` rendered as a form with collapsible sections, toggle switches, and save/restore buttons. Changes take effect immediately — no restart required.
-
-## Terminal
-
-<p align="center">
-  <img src="screenshots/09-webui-terminal.png" width="700" alt="Terminal">
-</p>
-
-Execute commands directly on the device. Supports command history with up/down arrows (persisted in session). Working directory is the Loki loot directory.
-
-## Display
-
-<p align="center">
-  <img src="screenshots/10-webui-display.png" width="700" alt="Display Mirror">
-</p>
-
-Live LCD mirror — renders the Pager's raw RGB565 framebuffer in the browser in real time. Scroll-to-zoom on desktop, pinch-to-zoom on mobile. The tab label is themeable (configured in `theme.json` via the `web.nav_label_display` field).
-
-## Tab Summary
-
-| Tab | Description |
-|-----|-------------|
-| **Dashboard** | Orchestrator status, live stats grid, integrated log console |
-| **Hosts** | Color-coded host cards with per-protocol attack badges |
-| **Attacks** | Attack timeline, manual mode with custom targets and vuln scanning |
-| **Loot** | Credentials, stolen files, vulnerabilities, and attack logs |
-| **Config** | All settings as a live-editable form |
-| **Terminal** | Device command execution with history |
-| **Display** | Live LCD framebuffer mirror with zoom |
+Hard-refresh the browser (`Cmd/Ctrl+Shift+R`) after editing JS.

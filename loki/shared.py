@@ -43,6 +43,36 @@ class SharedData:
         self.load_images()
         self.load_theme()
 
+    def _resolve_dictionary_paths(self):
+        """Pick users/passwords files based on config['dictionary_mode']."""
+        mode = (getattr(self, 'config', {}) or {}).get('dictionary_mode', 'default')
+        users_default = os.path.join(self.dictionarydir, 'users.txt')
+        pwds_default = os.path.join(self.dictionarydir, 'passwords.txt')
+        users_aggr = os.path.join(self.dictionarydir, 'users-aggressive.txt')
+        pwds_aggr = os.path.join(self.dictionarydir, 'passwords-aggressive.txt')
+
+        def _resolve(custom: str, fallback_when_blank: str) -> str:
+            if not custom:
+                return fallback_when_blank
+            # If user gave a bare filename, try the dictionary dir; otherwise use as-is.
+            if not os.path.isabs(custom) and not os.path.exists(custom):
+                in_dict = os.path.join(self.dictionarydir, custom)
+                if os.path.exists(in_dict):
+                    return in_dict
+            return custom
+
+        if mode == 'aggressive':
+            self.usersfile = users_aggr if os.path.exists(users_aggr) else users_default
+            self.passwordsfile = pwds_aggr if os.path.exists(pwds_aggr) else pwds_default
+        elif mode == 'custom':
+            users_custom = (getattr(self, 'config', {}) or {}).get('dictionary_users_custom', '')
+            pwds_custom = (getattr(self, 'config', {}) or {}).get('dictionary_passwords_custom', '')
+            self.usersfile = _resolve(users_custom, users_aggr if os.path.exists(users_aggr) else users_default)
+            self.passwordsfile = _resolve(pwds_custom, pwds_aggr if os.path.exists(pwds_aggr) else pwds_default)
+        else:
+            self.usersfile = users_default
+            self.passwordsfile = pwds_default
+
     def _migrate_legacy_data_layout(self):
         """One-shot migration from pager-era layout to the loki-recon layout.
 
@@ -184,8 +214,14 @@ class SharedData:
         self.livestatusfile = os.path.join(self.state_dir, 'livestatus.csv')
         self.vuln_summary_file = os.path.join(self.vulnerabilities_dir, 'vulnerability_summary.csv')
         self.vuln_scan_progress_file = os.path.join(self.vulnerabilities_dir, 'scan_progress.json')
-        self.usersfile = os.path.join(self.dictionarydir, "users.txt")
-        self.passwordsfile = os.path.join(self.dictionarydir, "passwords.txt")
+        # Dictionary selection — three modes:
+        #   default    → users.txt + passwords.txt              (~220 combos, fast)
+        #   aggressive → users-aggressive.txt + passwords-aggressive.txt (~10,800 combos)
+        #   custom     → paths from config['dictionary_users_custom'] / dictionary_passwords_custom
+        # If 'custom' is selected and a path is empty, that side falls back to the
+        # aggressive list. Missing custom paths are also resolved relative to the
+        # dictionary dir for convenience (so a user can drop a file into resources/dictionary/).
+        self._resolve_dictionary_paths()
         self.sshfile = os.path.join(self.crackedpwddir, 'ssh.csv')
         self.smbfile = os.path.join(self.crackedpwddir, "smb.csv")
         self.telnetfile = os.path.join(self.crackedpwddir, "telnet.csv")
@@ -272,6 +308,18 @@ class SharedData:
 
             "__title_storage__": "Storage",
             "data_dir": "",  # blank → use default (~/.loki/data) or LOKI_DATA_DIR env
+
+            "__title_vuln_scan__": "Vulnerability Scan",
+            "vuln_scan_mode": "lightweight",
+            "enable_nuclei": False,
+            "nuclei_severity": "medium,high,critical",
+            "nuclei_rate_limit": 50,
+            "nuclei_templates_dir": "",
+
+            "__title_brute_force__": "Brute Force Dictionary",
+            "dictionary_mode": "default",
+            "dictionary_users_custom": "",
+            "dictionary_passwords_custom": "",
 
             "__title_service_detection__": "Service Detection",
             "service_version_detection": True,
@@ -741,6 +789,11 @@ class SharedData:
                 self._apply_log_levels()
                 # Rebuild effective IP blacklist (load_config overwrites it with raw config value)
                 self.update_mac_blacklist()
+                # Re-resolve dictionary file paths in case dictionary_mode changed.
+                try:
+                    self._resolve_dictionary_paths()
+                except Exception as e:
+                    logger.debug(f"dictionary path resolve: {e}")
             else:
                 logger.warning("Configuration file not found, creating new one with default values...")
                 self.save_config()

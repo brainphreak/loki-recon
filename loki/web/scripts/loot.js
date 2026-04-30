@@ -75,18 +75,32 @@ const LootTab = {
         try {
             const html = await App.api('/list_credentials');
             const container = document.getElementById('loot-credentials');
+            const toolbar = '<div class="cred-toolbar" style="margin-bottom:12px;display:flex;gap:8px;align-items:center">'
+                          + '<button class="btn btn-gold" onclick="LootTab.downloadCredentials()">Download All (.zip)</button>'
+                          + '<span class="text-muted" style="font-size:12px">Bundles every cracked-cred CSV (ssh, ftp, smb, telnet, mysql, rdp).</span>'
+                          + '</div>';
             if (!html || html.trim() === '<div class="credentials-container">\n</div>\n') {
-                container.innerHTML = '<div class="empty-state">No credentials found yet.</div>';
+                container.innerHTML = toolbar + '<div class="empty-state">No credentials found yet.</div>';
                 return;
             }
-            // Restyle the server-rendered HTML with our new table classes
-            container.innerHTML = html.replace(/class="styled-table/g, 'class="data-table')
-                                      .replace(/<h2>/g, '<div class="cred-section"><h3>')
-                                      .replace(/<\/h2>/g, '</h3>')
-                                      .replace(/<\/table>/g, '</table></div>');
+            const restyled = html.replace(/class="styled-table/g, 'class="data-table')
+                                 .replace(/<h2>/g, '<div class="cred-section"><h3>')
+                                 .replace(/<\/h2>/g, '</h3>')
+                                 .replace(/<\/table>/g, '</table></div>');
+            container.innerHTML = toolbar + restyled;
         } catch (e) {
             document.getElementById('loot-credentials').innerHTML = '<div class="empty-state">Error loading credentials.</div>';
         }
+    },
+
+    downloadCredentials() {
+        // Plain anchor click triggers the browser's native download dialog.
+        const a = document.createElement('a');
+        a.href = '/download_credentials';
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
     },
 
     /* --- Stolen Files --- */
@@ -226,10 +240,36 @@ const LootTab = {
                 try {
                     const data = await App.api('/api/vulnerabilities/' + ip);
                     if (data && data.findings && data.findings.length) {
-                        let html = '';
+                        // Severity counts for the filter pills.
+                        const counts = { all: data.findings.length, critical: 0, high: 0, medium: 0, low: 0, info: 0, kev: 0 };
+                        data.findings.forEach(f => {
+                            const s = LootTab.findingSeverity(f);
+                            counts[s] = (counts[s] || 0) + 1;
+                            if (f.kev) counts.kev++;
+                        });
+                        let html = '<div class="vuln-filter-bar" data-ip="' + this.escapeHtml(ip) + '">';
+                        const pills = [
+                            ['all',      'All',      ''],
+                            ['kev',      'Exploited (KEV)', 'kev-badge'],
+                            ['critical', 'Critical', 'cvss-critical'],
+                            ['high',     'High',     'cvss-high'],
+                            ['medium',   'Medium',   'cvss-medium'],
+                            ['low',      'Low',      'cvss-low'],
+                            ['info',     'Info',     '']
+                        ];
+                        pills.forEach(p => {
+                            const n = counts[p[0]] || 0;
+                            const dim = n === 0 ? ' style="opacity:0.4"' : '';
+                            html += '<button class="vuln-filter-pill ' + (p[0] === 'all' ? 'active ' : '') + p[2] + '" '
+                                  + 'data-severity="' + p[0] + '"'
+                                  + dim + '>' + p[1] + ' (' + n + ')</button>';
+                        });
+                        html += '</div>';
                         data.findings.forEach(f => {
                             const stateClass = f.state === 'VULNERABLE' ? 'vuln-confirmed' : 'vuln-likely';
-                            html += '<div class="vuln-finding">';
+                            const sev = LootTab.findingSeverity(f);
+                            const kevAttr = f.kev ? ' data-kev="1"' : '';
+                            html += '<div class="vuln-finding" data-severity="' + sev + '"' + kevAttr + '>';
                             // Port and service
                             if (f.port && f.port !== 'host') {
                                 html += '<div class="vuln-port">' + this.escapeHtml(f.port) + (f.service ? ' (' + this.escapeHtml(f.service) + ')' : '') + '</div>';
@@ -278,6 +318,7 @@ const LootTab = {
                             html += '</div>';
                         });
                         detailContainer.innerHTML = html;
+                        LootTab._wireVulnFilter(detailContainer);
                     } else {
                         detailContainer.innerHTML = '<div class="empty-state">No structured findings. Run a new vuln scan to generate details.</div>';
                     }
@@ -302,6 +343,46 @@ const LootTab = {
         const div = document.createElement('div');
         div.textContent = str;
         return div.innerHTML;
+    },
+
+    /* --- Severity helpers --- */
+
+    findingSeverity(f) {
+        // KEV is its own bucket but also implies critical for filtering purposes;
+        // findings filter `kev` matches findings where f.kev=true regardless of CVSS.
+        if (typeof f.cvss_score === 'number') {
+            if (f.cvss_score >= 9.0) return 'critical';
+            if (f.cvss_score >= 7.0) return 'high';
+            if (f.cvss_score >= 4.0) return 'medium';
+            if (f.cvss_score > 0)    return 'low';
+        }
+        if (f.kev) return 'critical';                // KEV without CVSS → treat as critical
+        const risk = (f.risk || '').toLowerCase();
+        if (risk.includes('critical')) return 'critical';
+        if (risk.includes('high'))     return 'high';
+        if (risk.includes('medium'))   return 'medium';
+        if (risk.includes('low'))      return 'low';
+        if ((f.cves || []).length)     return 'medium';   // has CVE but no severity → medium
+        return 'info';
+    },
+
+    _wireVulnFilter(container) {
+        const bar = container.querySelector('.vuln-filter-bar');
+        if (!bar) return;
+        bar.addEventListener('click', (e) => {
+            const btn = e.target.closest('.vuln-filter-pill');
+            if (!btn) return;
+            bar.querySelectorAll('.vuln-filter-pill').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const want = btn.dataset.severity;
+            container.querySelectorAll('.vuln-finding').forEach(div => {
+                let show = false;
+                if (want === 'all') show = true;
+                else if (want === 'kev') show = div.dataset.kev === '1';
+                else show = div.dataset.severity === want;
+                div.style.display = show ? '' : 'none';
+            });
+        });
     },
 
     /* --- Attack Logs --- */

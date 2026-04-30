@@ -61,6 +61,9 @@ var AttacksTab = {
     activate() {
         this.syncManualModeState();
         this.loadOptions(true);
+        // Always-on log feed: show orchestrator activity even when no manual
+        // attack is running. Polling stops when the user leaves the tab.
+        this.startAttackLog();
         App.startPolling('attacks', () => this.refreshTimeline(), 15000);
     },
 
@@ -141,8 +144,9 @@ var AttacksTab = {
             }
             this.isManualMode = false;
             this.applyManualModeUI(false);
-            this.stopAttackLog();
-            document.getElementById('attack-log-output').classList.remove('visible');
+            // Keep the log panel visible and polling — auto orchestrator
+            // activity is useful to see even when not in manual mode.
+            this.startAttackLog();
             this.setStatus('', '');
             try { await App.post('/start_orchestrator'); } catch (e) {}
             App.toast('Manual mode disabled - orchestrator resumed', 'info');
@@ -375,8 +379,9 @@ var AttacksTab = {
 
     startAttackLog() {
         var el = document.getElementById('attack-log-output');
-        el.innerHTML = '';
-        el.classList.add('visible');
+        if (!el) return;
+        // Don't blank the panel on every start — keep prior content visible
+        // until the next /get_logs response replaces it.
         this.stopAttackLog();
         this.fetchAttackLogs();
         this.attackLogInterval = setInterval(() => this.fetchAttackLogs(), 500);
@@ -391,9 +396,13 @@ var AttacksTab = {
 
     async fetchAttackLogs() {
         try {
-            var data = await App.api('/get_logs?current=1');
+            // When a manual attack is running, scope to that action; otherwise
+            // show full orchestrator activity so the panel is useful in auto mode.
+            var url = this.isAttackRunning ? '/get_logs?current=1' : '/get_logs';
+            var data = await App.api(url);
             if (!data || data.includes('Waiting for logs')) return;
             var el = document.getElementById('attack-log-output');
+            if (!el) return;
             el.textContent = data;
             el.scrollTop = el.scrollHeight;
         } catch (e) {}

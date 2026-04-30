@@ -1848,6 +1848,173 @@ class WebUtils:
             handler.end_headers()
             handler.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
 
+    def clear_scan_logs(self, handler):
+        """Truncate log files (so Logger keeps writing) + wipe scan_results + livestatus."""
+        try:
+            sd = self.shared_data
+            # Truncate (not delete) any *.log files so the running Logger's
+            # RotatingFileHandler keeps writing to a valid inode.
+            if os.path.isdir(sd.logsdir):
+                for entry in os.listdir(sd.logsdir):
+                    full = os.path.join(sd.logsdir, entry)
+                    try:
+                        if os.path.isfile(full):
+                            with open(full, 'w'):
+                                pass  # truncate
+                    except Exception:
+                        pass
+            command = f"""
+            rm -rf {sd.scan_results_dir}/* \
+              && rm -f  {sd.livestatusfile}
+            """
+            subprocess.run(command, shell=True, check=False)
+            handler.send_response(200)
+            handler.send_header("Content-type", "application/json")
+            handler.end_headers()
+            handler.wfile.write(b'{"status":"success","message":"Scan logs cleared"}')
+        except Exception as e:
+            handler.send_response(500)
+            handler.send_header("Content-type", "application/json")
+            handler.end_headers()
+            handler.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
+
+    def clear_stats(self, handler):
+        """Zero the persisted attack counter (in-memory + on disk)."""
+        try:
+            self.shared_data.attacksnbr = 0
+            attacks_state = os.path.join(
+                getattr(self.shared_data, 'state_dir', getattr(self.shared_data, 'datadir', '.')),
+                'attacks_count.json',
+            )
+            with open(attacks_state, 'w') as f:
+                json.dump({'attacksnbr': 0}, f)
+            try:
+                self.shared_data.update_stats()
+            except Exception:
+                pass
+            handler.send_response(200)
+            handler.send_header("Content-type", "application/json")
+            handler.end_headers()
+            handler.wfile.write(b'{"status":"success","message":"Stats reset"}')
+        except Exception as e:
+            handler.send_response(500)
+            handler.send_header("Content-type", "application/json")
+            handler.end_headers()
+            handler.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
+
+    def clear_stolen_files(self, handler):
+        """Wipe the stolen-files directory only."""
+        try:
+            sd = self.shared_data
+            subprocess.run(f"rm -rf {sd.datastolendir}/*", shell=True, check=False)
+            handler.send_response(200)
+            handler.send_header("Content-type", "application/json")
+            handler.end_headers()
+            handler.wfile.write(b'{"status":"success","message":"Stolen files cleared"}')
+        except Exception as e:
+            handler.send_response(500)
+            handler.send_header("Content-type", "application/json")
+            handler.end_headers()
+            handler.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
+
+    def download_credentials(self, handler):
+        """Stream a zip of all cracked-credential CSVs (ssh.csv, ftp.csv, …)."""
+        import io as _io
+        import zipfile as _zipfile
+        from datetime import datetime as _dt
+        try:
+            sd = self.shared_data
+            buf = _io.BytesIO()
+            count = 0
+            with _zipfile.ZipFile(buf, 'w', _zipfile.ZIP_DEFLATED) as zf:
+                if os.path.isdir(sd.crackedpwddir):
+                    for entry in sorted(os.listdir(sd.crackedpwddir)):
+                        full = os.path.join(sd.crackedpwddir, entry)
+                        if os.path.isfile(full) and entry.lower().endswith('.csv'):
+                            zf.write(full, arcname=entry)
+                            count += 1
+            payload = buf.getvalue()
+            ts = _dt.now().strftime('%Y%m%d-%H%M%S')
+            filename = f"loki-credentials-{ts}.zip"
+            handler.send_response(200)
+            handler.send_header("Content-Type", "application/zip")
+            handler.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+            handler.send_header("Content-Length", str(len(payload)))
+            handler.send_header("X-Cred-Files-Bundled", str(count))
+            handler.end_headers()
+            handler.wfile.write(payload)
+        except Exception as e:
+            self.logger.error(f"download_credentials: {e}")
+            handler.send_response(500)
+            handler.send_header("Content-Type", "application/json")
+            handler.end_headers()
+            handler.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
+
+    def clear_credentials(self, handler):
+        """Wipe the cracked-credentials directory."""
+        try:
+            sd = self.shared_data
+            subprocess.run(f"rm -rf {sd.crackedpwddir}/*", shell=True, check=False)
+            handler.send_response(200)
+            handler.send_header("Content-type", "application/json")
+            handler.end_headers()
+            handler.wfile.write(b'{"status":"success","message":"Credentials cleared"}')
+        except Exception as e:
+            handler.send_response(500)
+            handler.send_header("Content-type", "application/json")
+            handler.end_headers()
+            handler.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
+
+    def clear_all(self, handler):
+        """Wipe everything: hosts, scan logs, stats, stolen files, AND credentials."""
+        try:
+            sd = self.shared_data
+            # Truncate logs so the live Logger keeps writing.
+            if os.path.isdir(sd.logsdir):
+                for entry in os.listdir(sd.logsdir):
+                    full = os.path.join(sd.logsdir, entry)
+                    try:
+                        if os.path.isfile(full):
+                            with open(full, 'w'):
+                                pass
+                    except Exception:
+                        pass
+            command = f"""
+            rm -f  {sd.netkbfile} \
+              && rm -f  {sd.livestatusfile} \
+              && rm -rf {sd.scan_results_dir}/* \
+              && rm -rf {sd.datastolendir}/* \
+              && rm -rf {sd.crackedpwddir}/* \
+              && rm -rf {sd.zombiesdir}/* \
+              && rm -rf {sd.vulnerabilities_dir}/* \
+              && rm -rf {sd.archives_dir}/*
+            """
+            subprocess.run(command, shell=True, check=False)
+            # Reset counters in memory and on disk.
+            sd.attacksnbr = 0
+            try:
+                attacks_state = os.path.join(
+                    getattr(sd, 'state_dir', getattr(sd, 'datadir', '.')),
+                    'attacks_count.json',
+                )
+                with open(attacks_state, 'w') as f:
+                    json.dump({'attacksnbr': 0}, f)
+            except Exception:
+                pass
+            try:
+                sd.update_stats()
+            except Exception:
+                pass
+            handler.send_response(200)
+            handler.send_header("Content-type", "application/json")
+            handler.end_headers()
+            handler.wfile.write(b'{"status":"success","message":"All data cleared"}')
+        except Exception as e:
+            handler.send_response(500)
+            handler.send_header("Content-type", "application/json")
+            handler.end_headers()
+            handler.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
+
     def clear_files_light(self, handler):
         try:
             # Light cleanup — logs + scan results + netkb/livestatus.

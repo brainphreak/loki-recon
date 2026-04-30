@@ -17,12 +17,15 @@ const ConfigTab = {
                 <div class="config-body" id="config-body">
                     <div class="empty-state">Loading configuration...</div>
                 </div>
-                <div class="config-header" style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px">
+                <div style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px">
                     <span class="section-title" style="margin:0">Reset</span>
-                    <div class="flex gap-8">
-                        <button class="btn" id="cfg-clear-hosts" title="Wipe netkb so hosts are rediscovered and re-attacked">Clear Hosts</button>
-                        <button class="btn btn-danger" id="cfg-clear-light" title="Clear scan + netkb. Keeps credentials and stolen files">Light Reset</button>
-                        <button class="btn btn-danger" id="cfg-clear-full" title="Clear everything except credentials">Full Reset</button>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
+                        <button class="btn btn-danger" id="cfg-clear-hosts">CLEAR HOSTS LIST</button>
+                        <button class="btn btn-danger" id="cfg-clear-scan-logs">CLEAR SCAN LOGS</button>
+                        <button class="btn btn-danger" id="cfg-clear-stats">CLEAR STATS</button>
+                        <button class="btn btn-danger" id="cfg-clear-stolen">CLEAR STOLEN FILES</button>
+                        <button class="btn btn-danger" id="cfg-clear-creds">CLEAR CREDENTIALS</button>
+                        <button class="btn btn-danger" id="cfg-clear-all" style="background:#7a1f1f">CLEAR ALL</button>
                     </div>
                 </div>
             </div>
@@ -30,33 +33,22 @@ const ConfigTab = {
 
         document.getElementById('cfg-save').addEventListener('click', () => this.save());
         document.getElementById('cfg-restore').addEventListener('click', () => this.restore());
-        document.getElementById('cfg-clear-hosts').addEventListener('click', () => this.clearHosts());
-        document.getElementById('cfg-clear-light').addEventListener('click', () => this.clearLight());
-        document.getElementById('cfg-clear-full').addEventListener('click', () => this.clearFull());
+        document.getElementById('cfg-clear-hosts').addEventListener('click', () => this._clear('/clear_hosts', 'CLEAR HOSTS LIST'));
+        document.getElementById('cfg-clear-scan-logs').addEventListener('click', () => this._clear('/clear_scan_logs', 'CLEAR SCAN LOGS'));
+        document.getElementById('cfg-clear-stats').addEventListener('click', () => this._clear('/clear_stats', 'CLEAR STATS'));
+        document.getElementById('cfg-clear-stolen').addEventListener('click', () => this._clear('/clear_stolen_files', 'CLEAR STOLEN FILES'));
+        document.getElementById('cfg-clear-creds').addEventListener('click', () => this._clear('/clear_credentials', 'CLEAR CREDENTIALS'));
+        document.getElementById('cfg-clear-all').addEventListener('click', () => this._clear('/clear_all', 'CLEAR ALL'));
     },
 
-    async clearHosts() {
-        if (!confirm('Clear all discovered hosts? They will be rediscovered on the next scan.')) return;
+    async _clear(endpoint, label) {
+        if (!confirm(label + ' — proceed?')) return;
         try {
-            await App.post('/clear_hosts');
-            App.toast('Hosts cleared', 'success');
-        } catch (e) { App.toast('Clear hosts failed: ' + e, 'error'); }
-    },
-
-    async clearLight() {
-        if (!confirm('Light Reset: clear scan results + netkb. Credentials and stolen files are kept. Continue?')) return;
-        try {
-            await App.post('/clear_files_light');
-            App.toast('Light reset complete', 'success');
-        } catch (e) { App.toast('Light reset failed: ' + e, 'error'); }
-    },
-
-    async clearFull() {
-        if (!confirm('Full Reset: clear logs, scan results, stolen data, vulnerabilities, zombies, attacks counter, and netkb. Credentials are kept. Continue?')) return;
-        try {
-            await App.post('/clear_files');
-            App.toast('Full reset complete', 'success');
-        } catch (e) { App.toast('Full reset failed: ' + e, 'error'); }
+            await App.post(endpoint);
+            App.toast(label + ' done', 'success');
+        } catch (e) {
+            App.toast(label + ' failed: ' + e, 'error');
+        }
     },
 
     activate() {
@@ -127,12 +119,31 @@ const ConfigTab = {
             { value: '90', label: 'Landscape (90°)' },
             { value: '180', label: 'Portrait inverted (180°)' },
             { value: '270', label: 'Landscape (270° - default)' }
+        ],
+        'vuln_scan_mode': [
+            { value: 'lightweight', label: 'Lightweight (vuln category — fast)' },
+            { value: 'full', label: 'Full (vuln + exploit + auth + default — slower, more findings)' }
+        ],
+        'dictionary_mode': [
+            { value: 'default', label: 'Default (11 users × 20 passwords ≈ 220 combos — fast)' },
+            { value: 'aggressive', label: 'Aggressive (102 users × 106 passwords ≈ 10,800 combos)' },
+            { value: 'custom', label: 'Custom (specify files below)' }
         ]
     },
 
     displayNames: {
         // Storage
         'data_dir': 'Data Directory (blank = ~/.loki/data; restart required to apply)',
+        // Vulnerability Scan
+        'vuln_scan_mode': 'NSE Scan Depth',
+        'enable_nuclei': 'Enable Nuclei (templated vuln scanner)',
+        'nuclei_severity': 'Nuclei: severity filter (info,low,medium,high,critical)',
+        'nuclei_rate_limit': 'Nuclei: max requests per second',
+        'nuclei_templates_dir': 'Nuclei: templates directory (blank = use defaults)',
+        // Brute Force Dictionary
+        'dictionary_mode': 'Wordlist',
+        'dictionary_users_custom': 'Custom Users File (path or filename in resources/dictionary/)',
+        'dictionary_passwords_custom': 'Custom Passwords File (path or filename in resources/dictionary/)',
         // Attack Settings
         'manual_mode': 'Start in Manual Mode',
         'clear_hosts_on_startup': 'Clear All Hosts on Startup',

@@ -52,6 +52,8 @@ install_apt() {
         nmap smbclient \
         python3 python3-pip python3-venv \
         iproute2 net-tools iputils-ping wireless-tools \
+        libjpeg-dev zlib1g-dev libfreetype6-dev libtiff5-dev liblcms2-dev libwebp-dev \
+        libssl-dev libffi-dev build-essential \
         ${freerdp_pkg}
 }
 
@@ -59,7 +61,9 @@ install_dnf() {
     sudo dnf install -y \
         nmap samba-client freerdp \
         python3 python3-pip python3-virtualenv \
-        iproute net-tools iputils wireless-tools
+        iproute net-tools iputils wireless-tools \
+        libjpeg-turbo-devel zlib-devel freetype-devel libtiff-devel lcms2-devel libwebp-devel \
+        openssl-devel libffi-devel gcc gcc-c++ make
 }
 
 install_pacman() {
@@ -89,12 +93,14 @@ if ! command -v nuclei &>/dev/null; then
     log "Installing nuclei (templated vuln scanner)…"
     NUCLEI_VERSION="${NUCLEI_VERSION:-3.3.5}"
     arch="$(uname -m)"
+    # ProjectDiscovery ships only: linux_386, linux_amd64, linux_arm, linux_arm64.
+    # The single linux_arm artifact is a Go ARM build that runs on armv6+ (Pi Zero, Pi 1/2/3 32-bit, Pi 4 32-bit).
     case "$arch" in
-        x86_64)         nuclei_arch="linux_amd64" ;;
-        aarch64|arm64)  nuclei_arch="linux_arm64" ;;
-        armv7l)         nuclei_arch="linux_armv7" ;;
-        armv6l)         nuclei_arch="linux_armv6" ;;
-        *)              nuclei_arch="" ;;
+        x86_64)                          nuclei_arch="linux_amd64" ;;
+        aarch64|arm64)                   nuclei_arch="linux_arm64" ;;
+        armv6l|armv7l|armhf|arm)         nuclei_arch="linux_arm" ;;
+        i386|i686)                       nuclei_arch="linux_386" ;;
+        *)                               nuclei_arch="" ;;
     esac
     if [[ -n "$nuclei_arch" ]]; then
         url="https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VERSION}/nuclei_${NUCLEI_VERSION}_${nuclei_arch}.zip"

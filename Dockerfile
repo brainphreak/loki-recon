@@ -47,11 +47,11 @@ ARG NUCLEI_VERSION=3.3.5
 RUN set -eux; \
     arch="$(dpkg --print-architecture)"; \
     case "$arch" in \
-        amd64)   nuclei_arch="linux_amd64" ;; \
-        arm64)   nuclei_arch="linux_arm64" ;; \
-        armhf)   nuclei_arch="linux_armv7" ;; \
-        armel)   nuclei_arch="linux_armv6" ;; \
-        *)       echo "Unsupported arch: $arch"; exit 1 ;; \
+        amd64)         nuclei_arch="linux_amd64" ;; \
+        arm64)         nuclei_arch="linux_arm64" ;; \
+        armhf|armel)   nuclei_arch="linux_arm" ;; \
+        i386)          nuclei_arch="linux_386" ;; \
+        *)             echo "Unsupported arch: $arch"; exit 1 ;; \
     esac; \
     url="https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VERSION}/nuclei_${NUCLEI_VERSION}_${nuclei_arch}.zip"; \
     curl -fsSL -o /tmp/nuclei.zip "$url"; \

@@ -243,7 +243,8 @@ class TimeoutContext:
 
 
 def try_connect_with_retries(connect_func, args, attempt_timeout, max_retries,
-                             retry_counter, retry_lock, logger=None):
+                             retry_counter, retry_lock, logger=None,
+                             abort_check=None):
     """
     Try a connection with per-attempt timeout and retry logic.
 
@@ -255,6 +256,10 @@ def try_connect_with_retries(connect_func, args, attempt_timeout, max_retries,
         retry_counter: dict with 'total' key — shared across all workers
         retry_lock: threading.Lock for retry_counter
         logger: Optional logger
+        abort_check: Optional zero-arg callable; if it returns True between
+            retries, give up immediately (returns None). Lets callers
+            break a hung-credential loop when shutdown/abort fires without
+            waiting the full attempt_timeout * max_retries window.
 
     Returns:
         True  = credentials worked
@@ -262,6 +267,8 @@ def try_connect_with_retries(connect_func, args, attempt_timeout, max_retries,
         None  = credential timed out max_retries times (caller should abort)
     """
     for attempt in range(max_retries):
+        if abort_check is not None and abort_check():
+            return None
         result = [None]  # None=timeout, True=success, False=auth_fail
         t = threading.Thread(target=lambda: result.__setitem__(0, connect_func(*args)),
                              daemon=True)

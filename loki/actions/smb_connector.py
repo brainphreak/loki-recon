@@ -291,7 +291,8 @@ class SMBConnector:
                 result = try_connect_with_retries(
                     self._smb_connect_inner, (adresse_ip, user, password),
                     attempt_timeout, max_retries,
-                    self.retry_counter, self.retry_lock, logger)
+                    self.retry_counter, self.retry_lock, logger,
+                    abort_check=lambda: self.shared_data.orchestrator_should_exit or self.abort_flag.is_set())
 
                 if result is None:
                     logger.warning(f"SMB brute force aborting for {adresse_ip}: credential timed out {max_retries} times")
@@ -434,8 +435,13 @@ class SMBConnector:
         # Give workers time to finish current items
         time.sleep(2)
 
-        # Join threads with timeout
-        hanging = join_threads_with_timeout(threads, timeout=10, logger=logger)
+        # Join threads with a timeout that gives an in-flight attempt time to
+        # finish naturally. attempt_timeout (default 30s) is the max one
+        # connect can take; +5s buffer for the loop iteration to come back
+        # around. Without this we'd warn every shutdown for threads that are
+        # actually fine — just blocked in a socket connect we already started.
+        attempt_timeout = getattr(self.shared_data, 'bruteforce_attempt_timeout', 30)
+        hanging = join_threads_with_timeout(threads, timeout=attempt_timeout + 5, logger=logger)
         if hanging:
             logger.warning(f"SMB bruteforce: {len(hanging)} threads did not terminate cleanly")
 

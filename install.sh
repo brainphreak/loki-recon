@@ -61,7 +61,18 @@ trap on_exit EXIT
 
 # --- 1. Detect distro / package manager ---
 PM=""
-if   command -v apt-get &>/dev/null; then PM=apt
+IS_MAC=0
+case "$(uname -s)" in
+    Darwin) IS_MAC=1 ;;
+esac
+
+if [[ "$IS_MAC" -eq 1 ]]; then
+    if command -v brew &>/dev/null; then
+        PM=brew
+    else
+        die "macOS detected but Homebrew not installed. Install it from https://brew.sh then re-run."
+    fi
+elif command -v apt-get &>/dev/null; then PM=apt
 elif command -v dnf     &>/dev/null; then PM=dnf
 elif command -v pacman  &>/dev/null; then PM=pacman
 elif command -v zypper  &>/dev/null; then PM=zypper
@@ -71,10 +82,19 @@ if [[ -f /etc/os-release ]]; then
     # shellcheck disable=SC1091
     . /etc/os-release
     log "Detected $PRETTY_NAME (package manager: ${PM:-unknown})"
+elif [[ "$IS_MAC" -eq 1 ]]; then
+    log "Detected macOS $(sw_vers -productVersion 2>/dev/null || echo) (package manager: $PM)"
 fi
 
 if [[ -z "$PM" ]]; then
-    die "No supported package manager found (apt, dnf, pacman, zypper). Install nmap, smbclient, freerdp, and python3-venv manually, then re-run."
+    die "No supported package manager found (brew, apt, dnf, pacman, zypper). Install nmap, smbclient, freerdp, and python3-venv manually, then re-run."
+fi
+
+# Where third-party binaries (nuclei, searchsploit, testssl) get symlinked.
+# /usr/local/bin works for Linux + Intel Macs; Apple Silicon brew uses /opt/homebrew/bin.
+BIN_PREFIX="/usr/local/bin"
+if [[ "$IS_MAC" -eq 1 ]]; then
+    BIN_PREFIX="$(brew --prefix)/bin"
 fi
 
 # --- 2. Install system packages ---
@@ -119,12 +139,27 @@ install_zypper() {
         iproute2 net-tools iputils wireless-tools
 }
 
+install_brew() {
+    # macOS: brew handles its own paths; no sudo. Pillow has prebuilt wheels
+    # on darwin-arm64 / darwin-x86_64, so no native -dev packages needed.
+    # 'samba' provides smbclient. 'freerdp' is a top-level formula on macOS
+    # (not the Linux freerdp2-x11 package). nuclei/testssl have brew formulas
+    # so we don't have to manually download tarballs further down.
+    brew update
+    brew install python@3.11 nmap samba freerdp nuclei testssl || true
+    # Make sure 'python3' resolves to a brew Python with venv support.
+    if ! command -v python3 &>/dev/null; then
+        die "python3 not on PATH after brew install. Open a new shell and re-run."
+    fi
+}
+
 log "Installing system packages via $PM…"
 case "$PM" in
     apt)    install_apt ;;
     dnf)    install_dnf ;;
     pacman) install_pacman ;;
     zypper) install_zypper ;;
+    brew)   install_brew ;;
 esac
 
 # --- 2b. Optional: Nuclei (ProjectDiscovery's templated vuln scanner) ---
@@ -146,8 +181,8 @@ if ! command -v nuclei &>/dev/null; then
         tmp="$(mktemp -d)"
         if curl -fsSL -o "$tmp/n.zip" "$url" \
             && (cd "$tmp" && unzip -q n.zip nuclei) \
-            && sudo install -m 0755 "$tmp/nuclei" /usr/local/bin/nuclei; then
-            log "nuclei installed: $(/usr/local/bin/nuclei -version 2>&1 | head -1)"
+            && sudo install -m 0755 "$tmp/nuclei" "$BIN_PREFIX/nuclei"; then
+            log "nuclei installed: $("$BIN_PREFIX/nuclei" -version 2>&1 | head -1)"
         else
             warn "nuclei download failed; you can install manually later"
         fi
@@ -160,21 +195,30 @@ else
 fi
 
 # --- 2c. Optional: searchsploit (Exploit-DB CLI for CVE → exploit mapping) ---
+# No brew formula — clone on every platform. Use $HOME on macOS to avoid sudo.
 if ! command -v searchsploit &>/dev/null; then
     log "Installing searchsploit (Exploit-DB CLI)…"
-    if [[ ! -d /opt/exploitdb ]]; then
-        sudo git clone --depth 1 https://gitlab.com/exploit-database/exploitdb.git /opt/exploitdb || warn "searchsploit clone failed"
+    if [[ "$IS_MAC" -eq 1 ]]; then
+        ESDB_DIR="$HOME/.local/share/exploitdb"
+        mkdir -p "$(dirname "$ESDB_DIR")"
+        [[ ! -d "$ESDB_DIR" ]] && git clone --depth 1 https://gitlab.com/exploit-database/exploitdb.git "$ESDB_DIR" || true
+        [[ -f "$ESDB_DIR/searchsploit" ]] && ln -sf "$ESDB_DIR/searchsploit" "$BIN_PREFIX/searchsploit"
+    else
+        if [[ ! -d /opt/exploitdb ]]; then
+            sudo git clone --depth 1 https://gitlab.com/exploit-database/exploitdb.git /opt/exploitdb || warn "searchsploit clone failed"
+        fi
+        [[ -f /opt/exploitdb/searchsploit ]] && sudo ln -sf /opt/exploitdb/searchsploit "$BIN_PREFIX/searchsploit"
     fi
-    [[ -f /opt/exploitdb/searchsploit ]] && sudo ln -sf /opt/exploitdb/searchsploit /usr/local/bin/searchsploit
 fi
 
 # --- 2d. Optional: testssl.sh (TLS audit) ---
-if ! command -v testssl.sh &>/dev/null; then
+# Brew already installs it on macOS via install_brew. Linux: clone manually.
+if ! command -v testssl.sh &>/dev/null && [[ "$IS_MAC" -ne 1 ]]; then
     log "Installing testssl.sh (TLS audit)…"
     if [[ ! -d /opt/testssl ]]; then
         sudo git clone --depth 1 https://github.com/drwetter/testssl.sh.git /opt/testssl || warn "testssl.sh clone failed"
     fi
-    [[ -f /opt/testssl/testssl.sh ]] && sudo ln -sf /opt/testssl/testssl.sh /usr/local/bin/testssl.sh && sudo chmod +x /opt/testssl/testssl.sh
+    [[ -f /opt/testssl/testssl.sh ]] && sudo ln -sf /opt/testssl/testssl.sh "$BIN_PREFIX/testssl.sh" && sudo chmod +x /opt/testssl/testssl.sh
 fi
 
 # --- 3. Python venv ---

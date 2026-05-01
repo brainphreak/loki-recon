@@ -45,6 +45,27 @@ const NetworkTab = {
             const hostname = h.hostname || '';
             const isExpanded = this.expandedHosts.has(h.ip);
 
+            // Threat-level flag: KEV (known exploited in the wild) wins over
+            // raw severity. Drives the host-card border colour and an inline
+            // badge so you can spot exploitable hosts without expanding.
+            const sev = (h.vuln_max_severity || '').toUpperCase();
+            const kev = h.kev_count || 0;
+            let threatCls = '';
+            let threatBadge = '';
+            if (kev > 0) {
+                threatCls = 'threat-kev';
+                threatBadge = '<span class="threat-badge kev" title="' + kev + ' CISA KEV finding(s) — known exploited in the wild">KEV ' + kev + '</span>';
+            } else if (sev === 'CRITICAL') {
+                threatCls = 'threat-critical';
+                threatBadge = '<span class="threat-badge critical">CRITICAL</span>';
+            } else if (sev === 'HIGH') {
+                threatCls = 'threat-high';
+                threatBadge = '<span class="threat-badge high">HIGH</span>';
+            } else if (sev === 'MEDIUM') {
+                threatCls = 'threat-medium';
+                threatBadge = '<span class="threat-badge medium">MEDIUM</span>';
+            }
+
             // Build attack status badges
             const actions = h.actions || {};
             const badges = this.renderBadges(actions);
@@ -69,13 +90,14 @@ const NetworkTab = {
             const profileHtml = isExpanded ? this.renderHostProfile(h) : '';
 
             return `
-                <div class="host-card ${statusCls}${isExpanded ? ' expanded' : ''}" data-ip="${h.ip}">
+                <div class="host-card ${statusCls} ${threatCls}${isExpanded ? ' expanded' : ''}" data-ip="${h.ip}">
                     <div class="host-row-main" onclick="NetworkTab.toggleHostDetail('${h.ip}')" style="cursor:pointer">
                         <div class="host-status ${statusCls}"></div>
                         <div class="host-info">
                             <span class="host-ip">${h.ip}</span>
                             ${hostname ? '<span class="host-name">' + hostname + '</span>' : ''}
                             <span class="host-mac">${h.mac || ''}</span>
+                            ${threatBadge}
                         </div>
                         <div class="host-ports">${ports}</div>
                     </div>

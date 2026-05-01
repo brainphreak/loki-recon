@@ -654,6 +654,32 @@ select.form-input {
 .host-card.pwned {
     border-color: var(--gold-dim);
 }
+/* Threat-level border accents — escalate from medium → high → critical → KEV.
+ * KEV always wins (set last in JS). Subtle left-border bar so it's obvious
+ * at a glance which hosts to drill into without expanding every card. */
+.host-card.threat-medium   { border-left: 4px solid #d4a200; }
+.host-card.threat-high     { border-left: 4px solid #e07b00; box-shadow: 0 0 6px rgba(224,123,0,0.25); }
+.host-card.threat-critical { border-left: 4px solid #d43c3c; box-shadow: 0 0 8px rgba(212,60,60,0.35); }
+.host-card.threat-kev      { border-left: 4px solid #ff2a2a; box-shadow: 0 0 12px rgba(255,42,42,0.55); animation: kev-pulse 2s ease-in-out infinite; }
+@keyframes kev-pulse {
+    0%,100% { box-shadow: 0 0 8px rgba(255,42,42,0.35); }
+    50%     { box-shadow: 0 0 16px rgba(255,42,42,0.7); }
+}
+.threat-badge {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 0.72em;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: #fff;
+    vertical-align: middle;
+}
+.threat-badge.medium   { background: #b88a00; }
+.threat-badge.high     { background: #c46a00; }
+.threat-badge.critical { background: #b53030; }
+.threat-badge.kev      { background: #ff2a2a; box-shadow: 0 0 6px rgba(255,42,42,0.7); }
 .host-row-main {
     display: flex;
     align-items: center;

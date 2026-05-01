@@ -294,6 +294,39 @@ class WebUtils:
                 'NmapVulnScanner', 'NucleiScanner',
                 'SearchSploitEnricher', 'TestSSLScanner'
             ]
+            # Pre-scan vulnerability detail files once so each host lookup is O(1).
+            # File naming: <sanitized_mac>_<ip>_vuln_details.json. Some details may
+            # have no MAC (manual targets) — match by IP substring.
+            vuln_dir = getattr(self.shared_data, 'vulnerabilities_dir', '')
+            vuln_by_ip = {}  # ip -> {max_sev, kev_count, total}
+            sev_rank = {'CRITICAL': 4, 'HIGH': 3, 'MEDIUM': 2, 'LOW': 1, 'INFO': 0}
+            if vuln_dir and os.path.isdir(vuln_dir):
+                for fname in os.listdir(vuln_dir):
+                    if not fname.endswith('_vuln_details.json'):
+                        continue
+                    fpath = os.path.join(vuln_dir, fname)
+                    try:
+                        with open(fpath, 'r') as fh:
+                            findings = json.load(fh)
+                    except Exception:
+                        continue
+                    if not isinstance(findings, list) or not findings:
+                        continue
+                    # Filename format: <mac>_<ip>_vuln_details.json — pull ip out.
+                    parts = fname[:-len('_vuln_details.json')].rsplit('_', 1)
+                    file_ip = parts[1] if len(parts) == 2 else ''
+                    if not file_ip:
+                        continue
+                    agg = vuln_by_ip.setdefault(file_ip,
+                        {'max_sev': '', 'kev_count': 0, 'total': 0})
+                    for f in findings:
+                        agg['total'] += 1
+                        if f.get('kev'):
+                            agg['kev_count'] += 1
+                        sev = (f.get('severity') or '').upper()
+                        if sev_rank.get(sev, -1) > sev_rank.get(agg['max_sev'], -1):
+                            agg['max_sev'] = sev
+
             hosts = []
             for row in data:
                 ip = row.get('IPs', row.get('IP Address', ''))
@@ -302,6 +335,7 @@ class WebUtils:
                     val = row.get(col, '')
                     if val:
                         actions_data[col] = val
+                vuln_agg = vuln_by_ip.get(ip, {})
                 hosts.append({
                     'mac': row.get('MAC Address', ''),
                     'ip': ip,
@@ -312,7 +346,11 @@ class WebUtils:
                     'os': row.get('OS', ''),
                     'vendor': row.get('Vendor', ''),
                     'device_type': row.get('Device Type', ''),
-                    'actions': actions_data
+                    'actions': actions_data,
+                    # Threat surface for at-a-glance flagging in the host list.
+                    'vuln_max_severity': vuln_agg.get('max_sev', ''),
+                    'kev_count': vuln_agg.get('kev_count', 0),
+                    'vuln_total': vuln_agg.get('total', 0),
                 })
 
             # Encode hostname in IP keys for vhost support (ip::hostname when hostname exists)

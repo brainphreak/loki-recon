@@ -42,6 +42,9 @@ var AttacksTab = {
             '<button class="btn btn-danger" id="atk-stop" style="display:none">Stop</button>' +
             '<button class="btn btn-danger btn-sm" id="atk-clear-hosts">Clear Hosts</button>' +
             '</div></div>' +
+            '<div class="manual-row" style="justify-content:flex-end">' +
+            '<button class="btn btn-sm auto-scroll-on" id="atk-auto-scroll-btn">Auto-scroll: ON</button>' +
+            '</div>' +
             '<div class="attack-log" id="attack-log-output"></div>' +
             '<hr class="divider">' +
             '<div class="section-title">Attack Timeline</div>' +
@@ -56,6 +59,31 @@ var AttacksTab = {
         document.getElementById('atk-custom-target').addEventListener('keydown', (e) => { if (e.key === 'Enter') this.addTarget(); });
         document.getElementById('atk-ip').addEventListener('change', () => this.updatePortDropdown());
         document.getElementById('atk-port').addEventListener('change', () => this.onPortSelected());
+
+        // Auto-scroll behaviour: matches the dashboard log panel. Default ON;
+        // user scrolling up flips it OFF so they can read history without the
+        // 500ms poll yanking them back. Scrolling back to the bottom flips it
+        // ON again. Manual toggle via button.
+        this.autoScroll = true;
+        var logEl = document.getElementById('attack-log-output');
+        var btn = document.getElementById('atk-auto-scroll-btn');
+        var self = this;
+        var updateBtn = function() {
+            btn.textContent = 'Auto-scroll: ' + (self.autoScroll ? 'ON' : 'OFF');
+            btn.classList.toggle('auto-scroll-on', self.autoScroll);
+        };
+        btn.addEventListener('click', function() {
+            self.autoScroll = !self.autoScroll;
+            updateBtn();
+            if (self.autoScroll) logEl.scrollTop = logEl.scrollHeight;
+        });
+        logEl.addEventListener('scroll', function() {
+            var atBottom = (logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight) < 40;
+            if (atBottom !== self.autoScroll) {
+                self.autoScroll = atBottom;
+                updateBtn();
+            }
+        });
     },
 
     activate() {
@@ -409,14 +437,14 @@ var AttacksTab = {
             var el = document.getElementById('attack-log-output');
             if (!el) return;
             el.textContent = data;
-            el.scrollTop = el.scrollHeight;
+            if (this.autoScroll) el.scrollTop = el.scrollHeight;
         } catch (e) {}
     },
 
     appendAttackLog(text) {
         var el = document.getElementById('attack-log-output');
         el.textContent += text;
-        el.scrollTop = el.scrollHeight;
+        if (this.autoScroll) el.scrollTop = el.scrollHeight;
     },
 
     waitForCompletion(actionName) {

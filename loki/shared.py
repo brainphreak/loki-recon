@@ -337,22 +337,28 @@ class SharedData:
         }
 
     def update_mac_blacklist(self):
-        """Update MAC blacklist and build effective IP blacklist.
+        """Build effective MAC + IP blacklists for this run.
 
-        The persisted ip_scan_blacklist in config is user-managed only.
-        Device IPs and gateway are added at runtime and not saved to config.
+        Both blacklists in config (mac_scan_blacklist / ip_scan_blacklist) are
+        user-managed only. The local device's own MAC and IPs (and the gateway)
+        are added at runtime to self.mac_scan_blacklist / self.ip_scan_blacklist
+        but never written back to self.config — otherwise they'd be persisted
+        into the shipped JSON and pollute every other user's repo.
         """
-        # Update MAC blacklist
+        # Start from the user-managed list in config; never mutate it.
+        persisted_macs = list(self.config.get('mac_scan_blacklist', []) or [])
+        runtime_macs = list(persisted_macs)
+
         mac_address = self.get_device_mac()
         if mac_address:
-            if 'mac_scan_blacklist' not in self.config:
-                self.config['mac_scan_blacklist'] = []
-
-            if mac_address not in self.config['mac_scan_blacklist']:
-                self.config['mac_scan_blacklist'].append(mac_address)
-                logger.info(f"Added local MAC address {mac_address} to blacklist")
+            if mac_address not in runtime_macs:
+                runtime_macs.append(mac_address)
+                logger.info(f"Added local MAC address {mac_address} to runtime blacklist (not persisted)")
         else:
             logger.warning("Could not add local MAC to blacklist: MAC address not found")
+
+        # Expose the union as the attribute scanners read.
+        self.mac_scan_blacklist = runtime_macs
 
         # Build effective IP blacklist: user's manual list + auto-detected device IPs + gateway
         effective = list(self.config.get('ip_scan_blacklist', []))

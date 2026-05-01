@@ -11,6 +11,14 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
 
+# --- 0. Install log ---
+# Mirror everything (this script + all child commands' stdout/stderr) to a log
+# file so failed installs can be debugged after the fact. Path is predictable:
+# users can attach it to bug reports without hunting for it.
+INSTALL_LOG="${LOKI_INSTALL_LOG:-$REPO_ROOT/install.log}"
+: > "$INSTALL_LOG"   # truncate previous run
+exec > >(tee -a "$INSTALL_LOG") 2>&1
+
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 RED='\033[0;31m'
@@ -19,6 +27,37 @@ RESET='\033[0m'
 log()  { echo -e "${GREEN}[loki-recon]${RESET} $*"; }
 warn() { echo -e "${YELLOW}[loki-recon]${RESET} $*"; }
 die()  { echo -e "${RED}[loki-recon]${RESET} $*" >&2; exit 1; }
+
+# Print where the log lives on every exit (success OR failure) so the user
+# always knows what to attach if they need help.
+on_exit() {
+    local rc=$?
+    if [[ $rc -eq 0 ]]; then
+        log "Install log saved to: $INSTALL_LOG"
+    else
+        warn "Install failed (exit $rc). Full log at: $INSTALL_LOG"
+        warn "If reporting a bug, attach that file."
+    fi
+}
+trap on_exit EXIT
+
+# --- 0a. Capture environment up-front (helps remote debugging) ---
+{
+    echo "===== loki-recon install — $(date -u +%Y-%m-%dT%H:%M:%SZ) ====="
+    echo "uname: $(uname -a 2>/dev/null || echo n/a)"
+    echo "arch: $(uname -m 2>/dev/null || echo n/a)"
+    if [[ -f /etc/os-release ]]; then
+        echo "os-release:"
+        sed 's/^/  /' /etc/os-release
+    fi
+    echo "python3: $(command -v python3 || echo missing) $(python3 --version 2>&1 || true)"
+    echo "pip3: $(command -v pip3 || echo missing) $(pip3 --version 2>&1 || true)"
+    echo "memory:"
+    free -h 2>/dev/null | sed 's/^/  /' || echo "  (free unavailable)"
+    echo "disk (repo root):"
+    df -h "$REPO_ROOT" 2>/dev/null | sed 's/^/  /' || true
+    echo "================================================================"
+} >> "$INSTALL_LOG"
 
 # --- 1. Detect distro / package manager ---
 PM=""

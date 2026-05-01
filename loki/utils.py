@@ -1573,36 +1573,13 @@ class WebUtils:
         handler.wfile.write(json.dumps(self.shared_data.config).encode('utf-8'))
 
     def serve_image(self, handler):
-        """Serve raw RGB565 framebuffer data for client-side rendering.
+        """Serve the LCD display scene as PNG, rendered server-side via Pillow.
 
-        Response body: 6-byte header followed by raw RGB565 pixel data.
-        Header: uint16 LE fb_width (222) + uint16 LE fb_height (480) + uint16 LE rotation.
-        The framebuffer memory layout is always 222x480 regardless of screen rotation.
-        The client uses the rotation value to display the image correctly.
+        Loki is headless — there is no Waveshare framebuffer to mirror. We compose
+        the scene (character + status text + counters) in memory using lcd_renderer
+        and send a normal PNG, which the browser's <canvas> path in loki.js renders.
         """
         try:
-            fb_path = '/dev/fb0'
-            fb_width = 222
-            fb_height = 480
-            fb_size = fb_width * fb_height * 2  # RGB565 = 2 bytes/pixel
-            rotation = getattr(self.shared_data, 'screen_rotation', 0)
-
-            with open(fb_path, 'rb') as fb:
-                raw = fb.read(fb_size)
-
-            import struct
-            header = struct.pack('<HHH', fb_width, fb_height, rotation)
-            payload = header + raw
-
-            handler.send_response(200)
-            handler.send_header("Content-type", "application/octet-stream")
-            handler.send_header("Content-Length", str(len(payload)))
-            handler.send_header("Cache-Control", "no-cache, no-store")
-            handler.end_headers()
-            handler.wfile.write(payload)
-        except FileNotFoundError:
-            # No framebuffer — render the LCD scene server-side with Pillow
-            # so the Display tab still shows the live character + stats scene.
             try:
                 import lcd_renderer  # noqa: PLC0415
                 data = lcd_renderer.render_png_bytes(self.shared_data)
@@ -1613,8 +1590,8 @@ class WebUtils:
                 handler.end_headers()
                 handler.wfile.write(data)
             except Exception as render_err:
-                self.logger.debug(f"lcd_renderer fallback failed: {render_err}")
-                # Last-ditch: static screen.png in webdir, then 404.
+                self.logger.debug(f"lcd_renderer failed: {render_err}")
+                # Last-ditch: static screen.png in webdir if someone shipped one.
                 image_path = os.path.join(self.shared_data.webdir, 'screen.png')
                 try:
                     with open(image_path, 'rb') as file:

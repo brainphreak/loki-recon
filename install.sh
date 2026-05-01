@@ -105,9 +105,18 @@ install_apt() {
     elif apt-cache show freerdp3-x11 &>/dev/null; then
         freerdp_pkg="freerdp3-x11"
     fi
-    sudo apt-get update
+    # Non-interactive so debconf never opens a TUI dialog (which the install
+    # log's tee redirect breaks anyway — arrow keys come through as raw
+    # escape codes). NEEDRESTART_MODE=a auto-restarts services without
+    # prompting on Debian/Ubuntu systems with needrestart installed.
+    export DEBIAN_FRONTEND=noninteractive
+    export NEEDRESTART_MODE=a
+    export NEEDRESTART_SUSPEND=1
+    sudo -E apt-get update
     # shellcheck disable=SC2086
-    sudo apt-get install -y \
+    sudo -E apt-get install -y \
+        -o Dpkg::Options::="--force-confdef" \
+        -o Dpkg::Options::="--force-confold" \
         nmap smbclient \
         python3 python3-pip python3-venv \
         iproute2 net-tools iputils-ping wireless-tools \

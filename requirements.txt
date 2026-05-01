@@ -29,3 +29,8 @@ itsdangerous>=2.1,<3     # Flask dep, used for token signing if needed
 
 # --- LCD scene renderer (server-side image composition for /screen.png) ---
 Pillow>=10.0,<12
+
+# --- Stdlib shim: telnetlib was removed in Python 3.13 (Kali rolling, etc.) ---
+# Drop-in replacement that re-exports the same API the telnet_connector and
+# steal_files_telnet modules already use. On Python <3.13 it's a no-op.
+telnetlib-313-and-up>=2.0; python_version >= "3.13"

@@ -37,6 +37,7 @@ def _reexec_into_venv() -> None:
     except OSError:
         return
     print(f"loki-pi: re-exec into {venv_py} (set LOKI_NO_VENV=1 to skip)")
+    sys.stdout.flush()  # execv won't flush buffered stdout (e.g. when piped to a log)
     os.environ["_LOKI_VENV_REEXEC"] = "1"
     try:
         os.execv(str(venv_py), [str(venv_py), str(Path(__file__).resolve()), *sys.argv[1:]])

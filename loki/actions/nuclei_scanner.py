@@ -70,7 +70,7 @@ class NucleiScanner:
         elif isinstance(ports, int):
             port_ints = [ports]
         else:
-            port_ints = [int(p) for p in (ports or [])]
+            port_ints = [int(p) for p in (ports or []) if str(p).strip().isdigit()]
         targets = self._build_targets(ip, port_ints)
         if not targets:
             logger.debug(f"No HTTP/HTTPS ports for {ip}; nuclei skipped")

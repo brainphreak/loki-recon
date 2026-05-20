@@ -249,8 +249,7 @@ cat <<EOF
 
 ${GREEN}loki-recon installed.${RESET}
 
-Run:
-    source .venv/bin/activate
+Run (loki.py auto-uses .venv, so activating is optional):
     python3 loki.py
 
 Then open the web UI at:

@@ -16,7 +16,36 @@ REPO_ROOT = Path(__file__).resolve().parent
 PAYLOAD_DIR = REPO_ROOT / "loki"
 
 
+def _reexec_into_venv() -> None:
+    """Re-exec under the project's .venv interpreter if present and not active.
+
+    install.sh installs every dependency into .venv/. Launching with the system
+    interpreter (`python3 loki.py` without `source .venv/bin/activate`) silently
+    misses them — most visibly telnetlib, which was dropped from the stdlib in
+    Python 3.13. Re-exec once so the documented launch works either way.
+    Set LOKI_NO_VENV=1 to skip (e.g. deps installed in system site-packages).
+    """
+    if os.environ.get("LOKI_NO_VENV") or os.environ.get("_LOKI_VENV_REEXEC"):
+        return
+    venv_dir = REPO_ROOT / ".venv"
+    venv_py = venv_dir / "bin" / "python"
+    if not venv_py.exists():
+        return
+    try:
+        if Path(sys.prefix).resolve() == venv_dir.resolve():
+            return  # already running inside the venv
+    except OSError:
+        return
+    print(f"loki-pi: re-exec into {venv_py} (set LOKI_NO_VENV=1 to skip)")
+    os.environ["_LOKI_VENV_REEXEC"] = "1"
+    try:
+        os.execv(str(venv_py), [str(venv_py), str(Path(__file__).resolve()), *sys.argv[1:]])
+    except OSError as exc:
+        print(f"loki-pi: venv re-exec failed ({exc}); continuing with {sys.executable}")
+
+
 def main() -> int:
+    _reexec_into_venv()
     parser = argparse.ArgumentParser(
         prog="loki-pi",
         description="LAN Orchestrated Key Infiltrator — Raspberry Pi port.",

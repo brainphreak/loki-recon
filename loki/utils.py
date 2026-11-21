@@ -1033,7 +1033,7 @@ class WebUtils:
             vuln_dir = self.shared_data.vulnerabilities_dir
             if os.path.exists(vuln_dir):
                 for fname in os.listdir(vuln_dir):
-                    if fname.endswith('_vuln_details.json') and ip in fname:
+                    if fname.endswith(f'_{ip}_vuln_details.json'):
                         try:
                             with open(os.path.join(vuln_dir, fname), 'r', encoding='utf-8') as f:
                                 findings = json.load(f)
@@ -1174,7 +1174,10 @@ class WebUtils:
             if os.path.exists(vuln_dir):
                 # Try JSON details first (structured data)
                 for f in os.listdir(vuln_dir):
-                    if f.endswith('_vuln_details.json') and ip in f:
+                    # Exact IP match: filenames are "<mac>_<ip>_vuln_details.json".
+                    # A substring test (ip in f) wrongly matches 10.0.0.90/.99 for
+                    # ip 10.0.0.9 and returns the wrong (often empty) host's file.
+                    if f.endswith(f'_{ip}_vuln_details.json'):
                         file_path = os.path.join(vuln_dir, f)
                         with open(file_path, 'r', encoding='utf-8') as fh:
                             details = json.load(fh)
@@ -2942,7 +2945,7 @@ method=auto
             vuln_lines = []
             if os.path.exists(vuln_dir):
                 for fname in os.listdir(vuln_dir):
-                    if fname.endswith('_vuln_details.json') and ip in fname:
+                    if fname.endswith(f'_{ip}_vuln_details.json'):
                         try:
                             with open(os.path.join(vuln_dir, fname), 'r', encoding='utf-8') as f:
                                 findings = json.load(f)

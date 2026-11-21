@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Loki
+Comment=LAN Orchestrated Key Infiltrator — autonomous network recon
+Exec=/usr/share/APPLaunch/bin/loki_launcher
+Icon=share/images/loki.png
+Terminal=false
+Sysplause=true
+Categories=Utility;
+StartupNotify=false

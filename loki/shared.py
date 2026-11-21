@@ -973,6 +973,7 @@ class SharedData:
         self.skin_bg_portrait = None
         self.skin_layout_landscape = {}
         self.skin_layout_portrait = {}
+        self.skin_layout_cardputer = {}
 
         # Load theme.json if the theme directory exists
         theme_json_path = os.path.join(theme_dir, "theme.json")
@@ -1075,6 +1076,10 @@ class SharedData:
                     theme_data = json.load(f)
                 self.skin_layout_landscape = theme_data.get("skin_layout_landscape", {})
                 self.skin_layout_portrait = theme_data.get("skin_layout_portrait", {})
+                # Native 320x170 layout for the M5Stack CardputerZero onboard LCD
+                # (optional; the renderer falls back to the scaled landscape
+                # scene when a theme doesn't define one).
+                self.skin_layout_cardputer = theme_data.get("skin_layout_cardputer", {})
             except (json.JSONDecodeError, IOError):
                 pass
 

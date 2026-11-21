@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# APPLaunch entry point for Loki on the M5Stack CardputerZero.
+# APPLaunch runs this blocking (it suspends its own UI + keyboard until we
+# exit), so Loki owns /dev/fb0 and the keyboard while running.
+set -uo pipefail
+
+APP_DIR="${LOKI_APP_DIR:-/opt/loki}"
+export LOKI_HW=cardputer
+export LOKI_DATA_DIR="${LOKI_DATA_DIR:-$HOME/.loki/data}"
+# APPLaunch injects APPLAUNCH_LINUX_FBDEV_DEVICE / APPLAUNCH_LINUX_KEYBOARD_DEVICE;
+# the cardputer backends honor them (falling back to /dev/fb0 + autodetect).
+
+LOG_DIR="/tmp/loki_logs"; mkdir -p "$LOG_DIR" 2>/dev/null || true
+LOG_FILE="$LOG_DIR/loki_$(date +%Y%m%d_%H%M%S).log"
+
+# Single instance.
+LOCK_DIR="/tmp/loki_singleton.lock"
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then exit 0; fi
+trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT INT TERM
+
+PY="$APP_DIR/.venv/bin/python"
+[ -x "$PY" ] || PY="$(command -v python3)"
+
+{
+  echo "[loki_launcher] APP_DIR=$APP_DIR PY=$PY fbdev=${APPLAUNCH_LINUX_FBDEV_DEVICE:-/dev/fb0}"
+  "$PY" "$APP_DIR/loki.py" --cardputer &
+  APP_PID=$!
+  trap 'kill -TERM "$APP_PID" 2>/dev/null || true; wait "$APP_PID" 2>/dev/null || true' INT TERM
+  wait "$APP_PID"
+} >>"$LOG_FILE" 2>&1

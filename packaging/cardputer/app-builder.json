@@ -1,0 +1,30 @@
+{
+  "app_name": "Loki",
+  "package_name": "loki",
+  "bin_name": "loki_launcher",
+  "version": "1.0.0",
+  "description": "Loki (LAN Orchestrated Key Infiltrator) — autonomous network recon for the CardputerZero.",
+  "store": {
+    "summary": "Autonomous LAN recon — scan, brute-force, exfiltrate.",
+    "description": "Loki (LAN Orchestrated Key Infiltrator) is an autonomous network-recon tool: ARP/host discovery, nmap port + vuln scans, credential brute force (FTP/SSH/Telnet/SMB/MySQL/RDP), and file/SQL exfiltration, with an animated themed character on the CardputerZero LCD and a web UI/JSON API over Wi-Fi. On-device menus (F/X navigate, Z/C change, Enter select, Esc back) let you pick a theme, start/pause scanning, and reset hosts/loot/counters. Authorized-use only.",
+    "icon": "loki.png",
+    "screenshots": [
+      "screenshots/01-scene.png",
+      "screenshots/02-menu.png"
+    ],
+    "categories": ["Security"],
+    "permissions": {
+      "camera": false,
+      "microphone": false,
+      "imu": false,
+      "network": true,
+      "additional_hardware": true,
+      "background_service": true,
+      "external_display": false
+    },
+    "author": {"display_name": "brAinphreAk", "github": "brainphreak"},
+    "source_repo": "https://github.com/brainphreak/loki-recon",
+    "license": "MIT",
+    "share_code": "loki"
+  }
+}

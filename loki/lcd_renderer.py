@@ -34,6 +34,9 @@ logger = logging.getLogger(__name__)
 LANDSCAPE_W, LANDSCAPE_H = 480, 222
 PORTRAIT_W, PORTRAIT_H = 222, 480
 
+# M5Stack CardputerZero onboard LCD (ST7789v3): 320x170 landscape.
+CARDPUTER_W, CARDPUTER_H = 320, 170
+
 # Cache the last-rendered frame for ~250 ms so back-to-back HTTP polls
 # don't re-render needlessly.
 _CACHE_TTL = 0.25
@@ -212,13 +215,27 @@ def _wrap_lines(draw, text: str, font, max_w: int, max_lines: int) -> list[str]:
 
 # ----- main render -----
 
-def render_frame(shared_data) -> 'Image.Image':
-    """Compose the LCD scene for the current theme + state."""
+def render_frame(shared_data, panel=None) -> 'Image.Image':
+    """Compose the LCD scene for the current theme + state.
+
+    panel='cardputer' renders natively at 320x170 using the theme's
+    `skin_layout_cardputer` block (falls back to the landscape layout), so text
+    is drawn at panel-native sizes instead of being scaled down from 480px.
+    The theme background is scaled to fill the panel; only the dynamic text is
+    repositioned by the cardputer layout.
+    """
     if not _PIL_AVAILABLE:
         raise RuntimeError("Pillow not installed; cannot render LCD frame")
 
-    landscape = _is_landscape(shared_data)
-    if landscape:
+    if panel == 'cardputer':
+        canvas_w, canvas_h = CARDPUTER_W, CARDPUTER_H
+        layout = (
+            getattr(shared_data, 'skin_layout_cardputer', None)
+            or getattr(shared_data, 'skin_layout_landscape', {})
+            or {}
+        )
+        bg_path = getattr(shared_data, 'skin_bg_landscape', None)
+    elif _is_landscape(shared_data):
         canvas_w, canvas_h = LANDSCAPE_W, LANDSCAPE_H
         layout = getattr(shared_data, 'skin_layout_landscape', {}) or {}
         bg_path = getattr(shared_data, 'skin_bg_landscape', None)
@@ -361,6 +378,50 @@ def render_frame(shared_data) -> 'Image.Image':
         _draw_text(draw, (bx, by), f"{int(bat_level)}%{suffix}", bat_font, bat_color + (255,), align)
 
     return canvas
+
+
+def render_panel_image(shared_data, panel_w=CARDPUTER_W, panel_h=CARDPUTER_H,
+                       scale_mode='fill') -> 'Image.Image':
+    """Render the scene and fit it to a physical panel (e.g. the CardputerZero
+    320x170 LCD).
+
+    The theme scene is composed at the pager's native landscape resolution
+    (480x222) by render_frame(), then resized to the panel. This is the MVP
+    "scale now, native-layout later" path — no per-theme 320x170 layout is
+    required; swap in a native layout later by giving themes a dedicated
+    skin_layout_cardputer block and rendering at panel size directly.
+
+    scale_mode:
+        'fill'    stretch to exactly panel_w x panel_h (fills the screen,
+                  slight horizontal squish: 480:222 -> 320:170).
+        'fit'     preserve aspect ratio, letterbox with black bars.
+    """
+    if not _PIL_AVAILABLE:
+        raise RuntimeError("Pillow not installed; cannot render LCD frame")
+
+    # Native path: if the theme defines a cardputer layout, compose directly at
+    # panel size (crisp text, no downscaling). Otherwise fall back to rendering
+    # the landscape scene and scaling it down (MVP).
+    has_native = bool(getattr(shared_data, 'skin_layout_cardputer', None))
+    if has_native and (panel_w, panel_h) == (CARDPUTER_W, CARDPUTER_H):
+        return render_frame(shared_data, panel='cardputer').convert('RGB')
+
+    img = render_frame(shared_data).convert('RGB')
+    src_w, src_h = img.size
+    if (src_w, src_h) == (panel_w, panel_h):
+        return img
+
+    if scale_mode == 'fit':
+        scale = min(panel_w / src_w, panel_h / src_h)
+        new_w = max(1, int(round(src_w * scale)))
+        new_h = max(1, int(round(src_h * scale)))
+        scaled = img.resize((new_w, new_h), Image.LANCZOS)
+        canvas = Image.new('RGB', (panel_w, panel_h), (0, 0, 0))
+        canvas.paste(scaled, ((panel_w - new_w) // 2, (panel_h - new_h) // 2))
+        return canvas
+
+    # 'fill' (default): stretch to the full panel.
+    return img.resize((panel_w, panel_h), Image.LANCZOS)
 
 
 def render_png_bytes(shared_data) -> bytes:

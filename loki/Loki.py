@@ -167,6 +167,30 @@ if __name__ == "__main__":
         loki_thread = threading.Thread(target=loki.run)
         loki_thread.start()
 
+        # CardputerZero onboard hardware (opt-in via LOKI_HW=cardputer).
+        # Purely additive: the plain Raspberry Pi / x86 path never enters here.
+        # Drives the built-in 320x170 LCD (/dev/fb0) and reads the keyboard
+        # (/dev/input/event*) alongside the headless broker + web UI.
+        if os.environ.get('LOKI_HW', '').lower() == 'cardputer':
+            try:
+                import cardputer_menu
+                shared_data.cardputer_menu = cardputer_menu.CardputerMenu(shared_data)
+                logger.info("CardputerZero menu initialized (start screen)")
+            except Exception as e:
+                logger.error(f"CardputerZero menu init failed: {e}")
+            try:
+                import cardputer_display
+                cardputer_display.start(shared_data)
+                logger.info("CardputerZero LCD backend started")
+            except Exception as e:
+                logger.error(f"CardputerZero LCD backend failed: {e}")
+            try:
+                import cardputer_input
+                cardputer_input.start(shared_data)
+                logger.info("CardputerZero keyboard backend started")
+            except Exception as e:
+                logger.error(f"CardputerZero keyboard backend failed: {e}")
+
         # Start web server (conditional on BJORN_WEB_UI env var)
         web_ui_setting = os.environ.get('BJORN_WEB_UI', 'on').lower()
         if web_ui_setting != 'off':

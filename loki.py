@@ -82,6 +82,13 @@ def main() -> int:
         help="Run without LCD/buttons (always true on Pi; flag kept for clarity)",
     )
     parser.add_argument(
+        "--cardputer",
+        action="store_true",
+        default=os.environ.get("LOKI_HW", "").lower() == "cardputer",
+        help="Drive the M5Stack CardputerZero onboard LCD + keyboard "
+             "(env: LOKI_HW=cardputer)",
+    )
+    parser.add_argument(
         "--log-level",
         default=os.environ.get("LOKI_LOG_LEVEL", "INFO"),
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -95,6 +102,8 @@ def main() -> int:
     os.environ["LOKI_PORT"] = str(args.port)
     os.environ["LOKI_LOG_LEVEL"] = args.log_level
     os.environ["BJORN_WEB_UI"] = "off" if args.no_web else "on"
+    if args.cardputer:
+        os.environ["LOKI_HW"] = "cardputer"
 
     # Make the payload package importable.
     sys.path.insert(0, str(PAYLOAD_DIR))

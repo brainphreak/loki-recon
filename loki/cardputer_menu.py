@@ -380,62 +380,101 @@ class CardputerMenu:
             w = len(text) * 8
         draw.text(((WIDTH - w) // 2, y), text, font=font, fill=fill)
 
+    def _tw(self, draw, text, font):
+        try:
+            return int(draw.textlength(text, font=font))
+        except Exception:
+            return len(text) * 10
+
+    def _panel(self, img, box, radius=10, fill=(10, 10, 16, 205)):
+        """Composite a translucent rounded panel onto the RGB background so the
+        menu text always sits on a dark, readable block regardless of the
+        theme's artwork."""
+        overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        try:
+            ImageDraw.Draw(overlay).rounded_rectangle(box, radius=radius, fill=fill)
+        except AttributeError:  # very old PIL without rounded_rectangle
+            ImageDraw.Draw(overlay).rectangle(box, fill=fill)
+        return Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
+
     def render(self, width=WIDTH, height=HEIGHT):
         if not _PIL:
             return None
         img = self._bg()
-        # dim overlay so text reads on busy backgrounds
-        overlay = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))
-        img = Image.blend(img, overlay, 0.45)
-        draw = ImageDraw.Draw(img)
-
-        item_f = self._font(20)
+        # Light full-screen dim; the content panel supplies the real contrast,
+        # so the themed art underneath stays visible.
+        img = Image.blend(img, Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0)), 0.22)
         hint_f = self._font(12)
 
-        # Confirm screen: a full-screen yes/no for a destructive reset.
+        # Vertical band between the baked theme title (top) and the footer.
+        band_top, band_bot = 40, 150
+
+        # Confirm screen: a centered panel with a yes/no for a destructive reset.
         if self.screen == "confirm":
-            self._center(draw, 40, (self._confirm_label or "Clear data") + "?",
-                         self._font(22), (255, 180, 90))
-            self._center(draw, 74, "This cannot be undone.", item_f, C_UNSEL)
-            self._center(draw, 118, "ENTER = yes      ESC = no", item_f, C_VALUE)
+            cw, ch = 252, 84
+            cx = (WIDTH - cw) // 2
+            cy = band_top + (band_bot - band_top - ch) // 2
+            img = self._panel(img, [cx, cy, cx + cw, cy + ch], fill=(12, 12, 18, 215))
+            draw = ImageDraw.Draw(img)
+            self._center(draw, cy + 10, (self._confirm_label or "Clear data") + "?",
+                         self._font(20), (255, 180, 90))
+            self._center(draw, cy + 36, "This cannot be undone.", self._font(15), C_UNSEL)
+            self._center(draw, cy + 58, "ENTER = yes     ESC = no", self._font(15), C_VALUE)
             return img
 
-        # The theme title ("LOKI") is already baked into menu_bg.png, so we do
-        # not draw our own title text (it would overlap / duplicate it).
-
+        # The theme title is baked into menu_bg.png, so we draw no title text.
         items = self._items()
         n = max(len(items), 1)
-        # Adaptive vertical layout so longer lists (Reset Data) still fit below
-        # the baked title band and above the hint footer.
-        top_lim, bot_lim = 46, 150
-        row_h = min(26, (bot_lim - top_lim) // n)
-        block_h = n * row_h
-        top = top_lim + max(0, (bot_lim - top_lim - block_h) // 2)
+
+        pad_x, pad_y = 14, 8
+        # Row height shrinks to fit longer lists; the font tracks it.
+        row_h = max(14, min(24, (band_bot - band_top - 2 * pad_y) // n))
+        fsize = min(20, row_h - 2)
+        item_f = self._font(fsize)
+
+        probe = ImageDraw.Draw(img)
+        # Panel width from the widest "label … value" row, clamped and centered.
+        content_w = 0
+        for it in items:
+            lw = self._tw(probe, "> " + it["label"], item_f)
+            vw = (self._tw(probe, str(it["value"]), item_f) + 24
+                  if it.get("value") is not None else 0)
+            content_w = max(content_w, lw + vw)
+        card_w = int(min(292, max(190, content_w + 2 * pad_x)))
+        card_x = (WIDTH - card_w) // 2
+        card_h = n * row_h + 2 * pad_y
+        card_y = band_top + max(0, (band_bot - band_top - card_h) // 2)
+
+        img = self._panel(img, [card_x, card_y, card_x + card_w, card_y + card_h])
+        draw = ImageDraw.Draw(img)
+
+        text_x = card_x + pad_x
+        val_right = card_x + card_w - pad_x
+        top = card_y + pad_y
+        ty_off = max(0, (row_h - fsize) // 2)
         for i, it in enumerate(items):
             y = top + i * row_h
             selected = (i == self.sel)
             if selected:
-                draw.rectangle([(16, y - 2), (WIDTH - 16, y + row_h - 4)], fill=C_SEL_BAR)
-            label = it["label"]
+                try:
+                    draw.rounded_rectangle(
+                        [card_x + 5, y, card_x + card_w - 5, y + row_h - 2],
+                        radius=6, fill=C_SEL_BAR)
+                except AttributeError:
+                    draw.rectangle([card_x + 5, y, card_x + card_w - 5, y + row_h - 2],
+                                   fill=C_SEL_BAR)
             color = C_SEL if selected else C_UNSEL
-            prefix = "> " if selected else "  "
-            draw.text((28, y), prefix + label, font=item_f, fill=color)
+            prefix = "> " if selected else "   "
+            draw.text((text_x, y + ty_off), prefix + it["label"], font=item_f, fill=color)
             if it.get("value") is not None:
                 val = str(it["value"])
-                try:
-                    w = draw.textlength(val, font=item_f)
-                except Exception:
-                    w = len(val) * 10
-                draw.text((WIDTH - 28 - w, y), val, font=item_f, fill=C_VALUE)
+                draw.text((val_right - self._tw(draw, val, item_f), y + ty_off),
+                          val, font=item_f, fill=C_VALUE)
 
-        # Transient result toast after a reset, else the key hint.
+        # Footer: transient toast after a reset, else the key hint.
         import time as _t
         if self._toast and _t.monotonic() < self._toast_until:
-            tw = 0
-            try:
-                tw = int(draw.textlength(self._toast, font=item_f))
-            except Exception:
-                tw = len(self._toast) * 10
+            tw = self._tw(draw, self._toast, item_f)
             draw.rectangle([((WIDTH - tw) // 2 - 10, HEIGHT - 30),
                             ((WIDTH + tw) // 2 + 10, HEIGHT - 2)], fill=(20, 90, 40))
             self._center(draw, HEIGHT - 27, self._toast, item_f, (255, 255, 255))

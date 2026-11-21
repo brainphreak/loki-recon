@@ -31,7 +31,7 @@ mkdir -p "$STAGE/opt/loki" \
 rsync -a \
   --exclude '.git' --exclude '.venv' --exclude 'screenshots' --exclude 'test_targets' \
   --exclude 'archive' --exclude '__pycache__' --exclude '*.pyc' --exclude '.DS_Store' \
-  --exclude 'packaging' \
+  --exclude 'packaging' --exclude 'dist' \
   "$REPO/" "$STAGE/opt/loki/"
 
 install -m0755 "$REPO/$PKG/loki_launcher" "$STAGE/usr/share/APPLaunch/bin/loki_launcher"

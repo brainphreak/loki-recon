@@ -25,6 +25,16 @@
     "author": {"display_name": "brAinphreAk", "github": "brainphreak"},
     "source_repo": "https://github.com/brainphreak/loki-recon",
     "license": "MIT",
-    "share_code": "loki"
+    "share_code": "loki",
+    "locales": {
+      "zh-CN": {
+        "title": "Loki",
+        "summary": "自主局域网侦察 — 扫描、暴力破解、数据窃取。"
+      },
+      "ja": {
+        "title": "Loki",
+        "summary": "自律型LAN偵察 — スキャン・総当たり・データ抽出。"
+      }
+    }
   }
 }

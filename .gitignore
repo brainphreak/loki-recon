@@ -37,3 +37,6 @@ dev_backup/
 build-output/
 src/openssl-3.0.13/
 
+
+# CardputerZero .deb build output
+dist/

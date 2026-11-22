@@ -303,6 +303,11 @@ class CardputerMenu:
                 wu.clear_all(h)
             else:
                 ok = False
+            # Zero the in-memory counters right away so the display reflects the
+            # reset immediately. The host counts come from the livestatus file,
+            # which clear_hosts does NOT remove (it only resets netkb), so drop
+            # it here too — otherwise display.py would re-read the old counts.
+            self._zero_counters(kind)
         except Exception as e:
             logger.error("reset %s failed: %s", kind, e)
             ok = False
@@ -312,6 +317,32 @@ class CardputerMenu:
         import time as _t
         self._toast = (f"{label}: done" if ok else f"{label}: failed")
         self._toast_until = _t.monotonic() + 1.6
+
+    def _zero_counters(self, kind):
+        sd = self.sd
+        if kind in ("reset_hosts", "reset_all"):
+            lf = getattr(sd, "livestatusfile", None)
+            if lf and os.path.exists(lf):
+                try:
+                    os.remove(lf)
+                except OSError:
+                    pass
+            sd.targetnbr = 0
+            sd.portnbr = 0
+            sd.networkkbnbr = 0
+        if kind in ("reset_loot", "reset_all"):
+            sd.crednbr = 0
+            sd.datanbr = 0
+        if kind == "reset_all":
+            sd.zombiesnbr = 0
+            sd.vulnnbr = 0
+            sd.attacksnbr = 0
+        if kind == "reset_counters":
+            sd.attacksnbr = 0
+        try:
+            sd.update_stats()  # recompute gold / level from the zeroed counts
+        except Exception:
+            pass
 
     def _quit(self):
         logger.info("menu: exit requested — terminating Loki so APPLaunch resumes")

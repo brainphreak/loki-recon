@@ -233,6 +233,14 @@ class Display:
                             sd.targetnbr = int(row.get('Alive Hosts Count', 0) or 0)
                             sd.networkkbnbr = int(row.get('All Known Hosts Count', 0) or 0)
                             break
+                else:
+                    # No live status file (e.g. after a data reset / before the
+                    # first scan) means no known hosts — zero these so the
+                    # display reflects the cleared state instead of keeping the
+                    # last-seen counts.
+                    sd.portnbr = 0
+                    sd.targetnbr = 0
+                    sd.networkkbnbr = 0
 
                 cracked_dir = getattr(sd, 'crackedpwddir', None)
                 if cracked_dir:

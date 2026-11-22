@@ -61,8 +61,8 @@ class NucleiScanner:
         if not self._is_enabled():
             return 'skipped'
         if not self.nuclei_path:
-            logger.warning("nuclei not installed; install with: apt or download binary")
-            return 'failed'
+            logger.debug("nuclei not installed; skipping (install the nuclei binary to enable)")
+            return 'skipped'
 
         # Coerce port list — orchestrator may pass int/list/csv string.
         if isinstance(ports, str):

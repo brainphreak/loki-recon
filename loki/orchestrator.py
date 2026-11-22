@@ -495,6 +495,10 @@ class Orchestrator:
             if result == 'success':
                 row[status_key] = f'success_{timestamp}'
                 logger.info(f"NucleiScanner ENDED (success) for {ip}")
+            elif result == 'skipped':
+                # Tool disabled or binary not installed — mark done, don't retry.
+                row[status_key] = f'success_{timestamp}'
+                logger.debug(f"NucleiScanner skipped for {ip} (disabled or not installed)")
             else:
                 prev_count = 0
                 if 'failed' in scan_status:
@@ -574,6 +578,10 @@ class Orchestrator:
             if result == 'success':
                 row[status_key] = f'success_{timestamp}'
                 logger.info(f"SearchSploitEnricher ENDED (success) for {ip}")
+            elif result == 'skipped':
+                # Tool disabled or binary not installed — mark done, don't retry.
+                row[status_key] = f'success_{timestamp}'
+                logger.debug(f"SearchSploitEnricher skipped for {ip} (disabled or not installed)")
             else:
                 prev_count = 0
                 if 'failed' in scan_status:

@@ -66,7 +66,8 @@ class SearchSploitEnricher:
         if not self._is_enabled():
             return 'skipped'
         if not self.searchsploit_path:
-            return 'failed'
+            logger.debug("searchsploit not installed; skipping (install exploitdb to enable)")
+            return 'skipped'
 
         path = self.shared_data.vuln_summary_file
         if not os.path.exists(path):
